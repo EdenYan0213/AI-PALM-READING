@@ -1,0 +1,15 @@
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\service\LlmClientService.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\controller\PalmistryController.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\controller\ApiExceptionHandler.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\PalmistryBackendApplication.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\repository\AppEventRepository.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\config\WebCorsConfig.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\repository\PalmRecordRepository.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\service\PalmistryService.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\entity\MonthlyReportEntity.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\entity\PalmRecordEntity.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\repository\SessionRecordRepository.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\repository\MonthlyReportRepository.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\model\ApiDtos.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\entity\AppEventEntity.java
+D:\pycharmprof\pythonProject\AI palm reading\stitch_\backend\src\main\java\com\palmistrylab\api\entity\SessionRecordEntity.java

@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: palmistry-backend
+  profiles:
+    default: dev
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+llm:
+  enabled: true
+  base-url: https://api.siliconflow.cn/v1
+  api-key: sk-aempgvopllpgbqzikljzdwmngiyrhsfrbdoiexcsirnwgxhj
+  model: Pro/moonshotai/Kimi-K2.6
+  fallback-model: ZhipuAI/GLM-5.1

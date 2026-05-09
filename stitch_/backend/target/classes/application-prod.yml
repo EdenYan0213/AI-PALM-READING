@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/palmistry?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    root: INFO
