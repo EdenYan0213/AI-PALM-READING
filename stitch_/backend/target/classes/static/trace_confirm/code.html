@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Palmistry AI - 描绘你的手相密码</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <style>
+    :root {
+      --bg-1: #0a0f1e;
+      --bg-2: #121a33;
+      --panel: rgba(8, 14, 30, 0.52);
+      --line-life-a: #ff6f61;
+      --line-life-b: #ff9e2a;
+      --line-wisdom-a: #3ea7ff;
+      --line-wisdom-b: #3ef3f7;
+      --line-love-a: #ff4db8;
+      --line-love-b: #9f7bff;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: #ecf4ff;
+      font-family: "Plus Jakarta Sans", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(71, 129, 255, 0.25), transparent 44%),
+        radial-gradient(circle at 90% 88%, rgba(255, 86, 170, 0.22), transparent 48%),
+        linear-gradient(180deg, var(--bg-1), var(--bg-2));
+    }
+
+    .grid-overlay {
+      background-image:
+        linear-gradient(rgba(146, 176, 255, 0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(146, 176, 255, 0.15) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+
+    .star-dash {
+      stroke-dasharray: 2 10;
+      animation: dash-move 3.5s linear infinite;
+    }
+
+    @keyframes dash-move {
+      to {
+        stroke-dashoffset: -260;
+      }
+    }
+
+    .line-chip {
+      border: 1px solid rgba(150, 180, 255, 0.36);
+      background: rgba(11, 18, 38, 0.62);
+      color: rgba(228, 240, 255, 0.88);
+    }
+
+    .line-chip.active {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset, 0 8px 28px rgba(58, 124, 255, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .cta-sticky {
+      backdrop-filter: blur(12px);
+      background: linear-gradient(180deg, rgba(12, 18, 38, 0.65), rgba(12, 18, 38, 0.9));
+      border-top: 1px solid rgba(170, 192, 255, 0.28);
+    }
+
+    .meta-point {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(230, 240, 255, 0.66);
+      box-shadow: 0 0 18px rgba(126, 186, 255, 0.65);
+      background: rgba(191, 224, 255, 0.36);
+      position: absolute;
+    }
+  </style>
+</head>
+
+<body>
+  <header class="px-5 pt-5 pb-3 max-w-3xl mx-auto">
+    <div class="flex items-center justify-between">
+      <h1 class="text-lg sm:text-xl font-semibold tracking-wide">描绘你的手相密码</h1>
+      <button id="skipButton" class="text-xs sm:text-sm text-blue-100/85 hover:text-white underline underline-offset-4">跳过描绘，直接查看</button>
+    </div>
+    <p class="mt-3 text-sm leading-6 text-blue-100/90">
+      你的掌纹密码，终究只有你亲手能解开。<br />
+      AI已经看出了大概，但最准的部分，还得你用手指来确认。<br />
+      让我们一起，把属于你的命运线描出来。
+    </p>
+  </header>
+
+  <main class="relative px-4 pb-40 max-w-3xl mx-auto">
+    <section class="relative rounded-3xl overflow-hidden border border-blue-200/25 shadow-[0_18px_48px_rgba(8,14,30,0.55)]">
+      <img id="palmImage" alt="Palm" class="w-full h-[62vh] min-h-[420px] object-cover" />
+      <div class="absolute inset-0 grid-overlay opacity-45"></div>
+      <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#060b1b]/38"></div>
+
+      <svg id="guideSvg" class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 1400" preserveAspectRatio="none">
+        <path id="guidePath" class="star-dash" d="" fill="none" stroke="rgba(255,146,146,0.78)" stroke-width="5" stroke-linecap="round"></path>
+      </svg>
+
+      <div id="metaAnchors" class="absolute inset-0 pointer-events-none">
+        <div class="meta-point" style="left: 20%; top: 66%;"></div>
+        <div class="meta-point" style="left: 44%; top: 86%;"></div>
+        <div class="meta-point" style="left: 68%; top: 44%;"></div>
+      </div>
+
+      <canvas id="traceCanvas" class="absolute inset-0 w-full h-full touch-none"></canvas>
+
+      <div class="absolute left-4 right-4 top-4 rounded-2xl px-4 py-3 bg-[#0d1530]/72 border border-blue-200/25">
+        <p id="guideHint" class="text-sm text-blue-50">跟着光的指引，用指尖描摹你的生命线。</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="fixed bottom-0 left-0 right-0 cta-sticky px-4 pt-3 pb-5">
+    <div class="max-w-3xl mx-auto space-y-3">
+      <div class="grid grid-cols-3 gap-2" id="lineTabs">
+        <button data-line="lifeLine" class="line-chip active rounded-full px-2 py-2 text-xs sm:text-sm">生命线（红）</button>
+        <button data-line="wisdomLine" class="line-chip rounded-full px-2 py-2 text-xs sm:text-sm">智慧线（蓝）</button>
+        <button data-line="loveLine" class="line-chip rounded-full px-2 py-2 text-xs sm:text-sm">感情线（紫）</button>
+      </div>
+
+      <div class="flex items-center justify-between gap-3">
+        <button id="clearCurrentButton" class="px-4 py-2 rounded-full text-xs sm:text-sm border border-blue-200/35 text-blue-50 hover:bg-blue-200/10">清除重画当前线</button>
+        <span id="progressText" class="text-xs sm:text-sm text-blue-100/85">已完成 0 / 3</span>
+      </div>
+
+      <button id="confirmButton" class="w-full py-3.5 rounded-full font-semibold text-sm sm:text-base bg-gradient-to-r from-fuchsia-500 via-pink-500 to-orange-400 text-white disabled:opacity-45 hidden" disabled>
+        解锁深度解读（看广告）
+      </button>
+      <p id="submitStatus" class="text-center text-xs text-blue-100/80"></p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const API_BASE = "http://localhost:8080/api/v1";
+      const CAPTURE_KEY = "palmistry.capturedImage";
+      const REPORT_CACHE_KEY = "palmistry.singleReport";
+      const ANALYZE_ERROR_KEY = "palmistry.analyzeError";
+      const TRACE_KEY = "palmistry.tracePayload";
+      const WEEKLY_CACHE_KEY = "palmistry.weeklyRecord";
+      const USER_KEY = "palmistry.userId";
+      const query = new URLSearchParams(window.location.search);
+      const recordFlow = query.get("recordFlow") || "single";
+      if (!localStorage.getItem(USER_KEY)) {
+        localStorage.setItem(USER_KEY, "guest-demo");
+      }
+
+      const lineConfigs = {
+        lifeLine: {
+          label: "生命线",
+          hint: "跟着光的指引，用指尖描摹你的生命线。",
+          gradient: ["#ff6f61", "#ff9e2a"],
+          guideStroke: "rgba(255,146,146,0.78)",
+          guide: "M238,1068 C210,880 204,734 252,608 C290,510 344,442 392,404"
+        },
+        wisdomLine: {
+          label: "智慧线",
+          hint: "沿着星光虚线，描摹你的智慧线走势。",
+          gradient: ["#3ea7ff", "#3ef3f7"],
+          guideStroke: "rgba(126,198,255,0.8)",
+          guide: "M218,598 C308,616 436,638 556,682 C654,718 746,752 816,784"
+        },
+        loveLine: {
+          label: "感情线",
+          hint: "请轻描感情线，让AI读取你的情绪结构。",
+          gradient: ["#ff4db8", "#9f7bff"],
+          guideStroke: "rgba(255,150,224,0.82)",
+          guide: "M226,460 C334,404 454,382 598,390 C696,396 770,424 836,468"
+        }
+      };
+
+      const palmImage = document.getElementById("palmImage");
+      const traceCanvas = document.getElementById("traceCanvas");
+      const guidePath = document.getElementById("guidePath");
+      const guideHint = document.getElementById("guideHint");
+      const lineTabs = document.getElementById("lineTabs");
+      const clearCurrentButton = document.getElementById("clearCurrentButton");
+      const confirmButton = document.getElementById("confirmButton");
+      const skipButton = document.getElementById("skipButton");
+      const submitStatus = document.getElementById("submitStatus");
+      const progressText = document.getElementById("progressText");
+
+      const imageData = localStorage.getItem(CAPTURE_KEY) || "";
+      if (!imageData) {
+        window.location.href = "../light_2/code.html";
+        return;
+      }
+      palmImage.src = imageData;
+
+      const ctx = traceCanvas.getContext("2d");
+      const traces = {
+        lifeLine: [],
+        wisdomLine: [],
+        loveLine: []
+      };
+      const particles = [];
+      let currentLine = "lifeLine";
+      let drawing = false;
+      let lastPoint = null;
+
+      const resizeCanvas = () => {
+        const rect = traceCanvas.getBoundingClientRect();
+        traceCanvas.width = Math.max(1, Math.round(rect.width * window.devicePixelRatio));
+        traceCanvas.height = Math.max(1, Math.round(rect.height * window.devicePixelRatio));
+        ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+        redrawAll();
+      };
+
+      const setGuide = () => {
+        const config = lineConfigs[currentLine];
+        guideHint.textContent = config.hint;
+        guidePath.setAttribute("d", config.guide);
+        guidePath.setAttribute("stroke", config.guideStroke);
+        lineTabs.querySelectorAll("button").forEach((button) => {
+          button.classList.toggle("active", button.dataset.line === currentLine);
+        });
+      };
+
+      const createGradient = (from, to) => {
+        const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+        const colors = lineConfigs[currentLine].gradient;
+        gradient.addColorStop(0, colors[0]);
+        gradient.addColorStop(1, colors[1]);
+        return gradient;
+      };
+
+      const toCanvasPoint = (event) => {
+        const rect = traceCanvas.getBoundingClientRect();
+        return {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+          t: Date.now()
+        };
+      };
+
+      const drawSegment = (from, to, key) => {
+        const colors = lineConfigs[key].gradient;
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = 5;
+        const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+        gradient.addColorStop(0, colors[0]);
+        gradient.addColorStop(1, colors[1]);
+        ctx.strokeStyle = gradient;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = colors[0];
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.restore();
+      };
+
+      const spawnParticles = (point, key) => {
+        const colors = lineConfigs[key].gradient;
+        for (let i = 0; i < 3; i++) {
+          particles.push({
+            x: point.x,
+            y: point.y,
+            vx: (Math.random() - 0.5) * 0.9,
+            vy: -0.4 - Math.random() * 0.8,
+            life: 18 + Math.floor(Math.random() * 12),
+            color: colors[Math.floor(Math.random() * colors.length)]
+          });
+        }
+      };
+
+      const drawParticles = () => {
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.03;
+          p.life -= 1;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life / 30);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+          }
+        }
+      };
+
+      const redrawAll = () => {
+        ctx.clearRect(0, 0, traceCanvas.width, traceCanvas.height);
+        Object.keys(traces).forEach((key) => {
+          const points = traces[key];
+          for (let i = 1; i < points.length; i++) {
+            drawSegment(points[i - 1], points[i], key);
+          }
+        });
+      };
+
+      const animate = () => {
+        redrawAll();
+        drawParticles();
+        window.requestAnimationFrame(animate);
+      };
+
+      const vibrateOnce = () => {
+        try {
+          if (window.wx && typeof window.wx.vibrateShort === "function") {
+            window.wx.vibrateShort();
+            return;
+          }
+        } catch (e) {
+          // Ignore wx runtime errors and fallback to web vibrate.
+        }
+        if (navigator.vibrate) {
+          navigator.vibrate(12);
+        }
+      };
+
+      const addPoint = (point) => {
+        const points = traces[currentLine];
+        if (points.length > 0) {
+          const prev = points[points.length - 1];
+          const distance = Math.hypot(prev.x - point.x, prev.y - point.y);
+          if (distance < 3) {
+            return;
+          }
+          drawSegment(prev, point, currentLine);
+        }
+        points.push(point);
+        spawnParticles(point, currentLine);
+      };
+
+      const updateProgress = () => {
+        const completed = Object.values(traces).filter((line) => line.length >= 8).length;
+        progressText.textContent = "已完成 " + completed + " / 3";
+        confirmButton.disabled = completed < 3;
+        confirmButton.classList.toggle("hidden", completed < 3);
+      };
+
+      const onPointerDown = (event) => {
+        event.preventDefault();
+        drawing = true;
+        traceCanvas.setPointerCapture(event.pointerId);
+        lastPoint = toCanvasPoint(event);
+        vibrateOnce();
+        addPoint(lastPoint);
+        updateProgress();
+      };
+
+      const onPointerMove = (event) => {
+        if (!drawing) {
+          return;
+        }
+        event.preventDefault();
+        const point = toCanvasPoint(event);
+        lastPoint = point;
+        addPoint(point);
+        updateProgress();
+      };
+
+      const onPointerUp = (event) => {
+        if (!drawing) {
+          return;
+        }
+        drawing = false;
+        traceCanvas.releasePointerCapture(event.pointerId);
+        if (lastPoint) {
+          spawnParticles(lastPoint, currentLine);
+        }
+        updateProgress();
+      };
+
+      const exportTraces = () => {
+        const toPayloadLine = (line) => line.map((point) => ({
+          x: Number(point.x.toFixed(2)),
+          y: Number(point.y.toFixed(2)),
+          t: point.t
+        }));
+        return {
+          lifeLine: toPayloadLine(traces.lifeLine),
+          wisdomLine: toPayloadLine(traces.wisdomLine),
+          loveLine: toPayloadLine(traces.loveLine)
+        };
+      };
+
+      const submitAnalyze = async (withTraces) => {
+        submitStatus.textContent = "正在生成你的专属报告...";
+        confirmButton.disabled = true;
+        skipButton.disabled = true;
+        clearCurrentButton.disabled = true;
+
+        try {
+          localStorage.removeItem(ANALYZE_ERROR_KEY);
+          let response;
+          if (recordFlow === "weekly") {
+            const weeklyBody = {
+              userId: localStorage.getItem(USER_KEY),
+              recordMode: withTraces ? "full" : "quick",
+              imageData,
+              recordDate: new Date().toISOString().slice(0, 10)
+            };
+            if (withTraces) {
+              weeklyBody.traces = exportTraces();
+              localStorage.setItem(TRACE_KEY, JSON.stringify(weeklyBody.traces));
+            }
+            response = await fetch(API_BASE + "/record/weekly", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(weeklyBody)
+            });
+          } else {
+            const body = {
+              source: "camera",
+              handSide: "left",
+              gender: "unknown",
+              imageData,
+              recordMode: "single"
+            };
+            if (withTraces) {
+              body.traces = exportTraces();
+              localStorage.setItem(TRACE_KEY, JSON.stringify(body.traces));
+            } else {
+              localStorage.removeItem(TRACE_KEY);
+            }
+            response = await fetch(API_BASE + "/palm/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body)
+            });
+          }
+
+          if (!response.ok) {
+            throw new Error("analyze failed");
+          }
+
+          const payload = await response.json();
+          if (!payload || !payload.sessionId) {
+            throw new Error("empty analyze payload");
+          }
+
+          if (recordFlow === "weekly") {
+            localStorage.setItem(WEEKLY_CACHE_KEY, JSON.stringify(payload));
+          } else {
+            localStorage.setItem(REPORT_CACHE_KEY, JSON.stringify(payload));
+          }
+          submitStatus.textContent = "已完成，正在进入报告...";
+          setTimeout(function () {
+            if (recordFlow === "weekly") {
+              window.location.href = "../weekly_quick/code.html?from=trace-confirm";
+            } else {
+              window.location.href = "../light_3/code.html?from=trace-confirm";
+            }
+          }, 320);
+        } catch (error) {
+          const errorText = String(error && error.message ? error.message : error);
+          localStorage.setItem(ANALYZE_ERROR_KEY, errorText);
+          submitStatus.textContent = "生成失败，请稍后重试";
+          confirmButton.disabled = false;
+          skipButton.disabled = false;
+          clearCurrentButton.disabled = false;
+        }
+      };
+
+      lineTabs.addEventListener("click", function (event) {
+        const button = event.target.closest("button[data-line]");
+        if (!button) {
+          return;
+        }
+        currentLine = button.dataset.line;
+        setGuide();
+      });
+
+      clearCurrentButton.addEventListener("click", function () {
+        traces[currentLine] = [];
+        updateProgress();
+      });
+
+      skipButton.addEventListener("click", function () {
+        submitAnalyze(false);
+      });
+
+      confirmButton.addEventListener("click", function () {
+        submitAnalyze(true);
+      });
+
+      traceCanvas.addEventListener("pointerdown", onPointerDown);
+      traceCanvas.addEventListener("pointermove", onPointerMove);
+      traceCanvas.addEventListener("pointerup", onPointerUp);
+      traceCanvas.addEventListener("pointercancel", onPointerUp);
+
+      window.addEventListener("resize", resizeCanvas);
+
+      resizeCanvas();
+      setGuide();
+      updateProgress();
+      animate();
+    })();
+  </script>
+</body>
+
+</html>

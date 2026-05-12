@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>记录回顾</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <style>
+    body {
+      background: linear-gradient(180deg, #fff8f7, #f5f8ff);
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+    }
+  </style>
+</head>
+
+<body class="text-slate-800 min-h-screen pb-20">
+  <main class="max-w-xl mx-auto px-5 py-6 space-y-4">
+    <header class="glass rounded-3xl p-5">
+      <h1 class="text-xl font-semibold text-pink-700">当日记录回顾</h1>
+      <p id="dateText" class="mt-2 text-sm text-slate-600">-</p>
+    </header>
+
+    <section class="glass rounded-3xl p-5 space-y-3">
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">生命线气色</p>
+          <p id="energyText" class="text-lg font-semibold">-</p>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">智慧活跃度</p>
+          <p id="wisdomText" class="text-lg font-semibold">-</p>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">情绪波动</p>
+          <p id="emotionText" class="text-lg font-semibold">-</p>
+        </div>
+      </div>
+
+      <div class="rounded-2xl bg-pink-50 border border-pink-100 p-3">
+        <p class="text-xs text-pink-700">AI 总结</p>
+        <p id="summaryText" class="mt-1 text-sm leading-6"></p>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-100 p-3">
+        <p class="text-xs text-slate-600">当日便签</p>
+        <p id="noteText" class="mt-1 text-sm leading-6 text-slate-700">未填写便签</p>
+      </div>
+
+      <a href="../palm_calendar/code.html" class="block text-center py-2 rounded-full bg-pink-600 text-white">返回手相日历</a>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const API_BASE = 'http://localhost:8080/api/v1';
+      const query = new URLSearchParams(window.location.search);
+      const userId = query.get('userId') || localStorage.getItem('palmistry.userId') || 'guest-demo';
+      const date = query.get('date') || new Date().toISOString().slice(0, 10);
+
+      const dateText = document.getElementById('dateText');
+      const energyText = document.getElementById('energyText');
+      const wisdomText = document.getElementById('wisdomText');
+      const emotionText = document.getElementById('emotionText');
+      const summaryText = document.getElementById('summaryText');
+      const noteText = document.getElementById('noteText');
+
+      dateText.textContent = '记录日期：' + date;
+
+      fetch(API_BASE + '/record/detail?userId=' + encodeURIComponent(userId) + '&date=' + encodeURIComponent(date))
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+          }
+          return response.json();
+        })
+        .then((payload) => {
+          energyText.textContent = payload.energyLevel ?? '-';
+          wisdomText.textContent = payload.wisdomActive ?? '-';
+          emotionText.textContent = payload.emotionWave ?? '-';
+          summaryText.textContent = payload.aiSummary || '暂无总结';
+          noteText.textContent = payload.userNote || '未填写便签';
+        })
+        .catch(() => {
+          summaryText.textContent = '未找到该日期记录或后端未启动';
+          noteText.textContent = '无便签';
+        });
+    })();
+  </script>
+</body>
+
+</html>
