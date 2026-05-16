@@ -1,0 +1,66 @@
+﻿.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+  padding: 2rem;
+}
+
+.spinner-ring {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  margin-bottom: 2rem;
+}
+
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+}
+
+.ring-1 {
+  border-top-color: #ff6f61;
+  animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.ring-2 {
+  inset: 6px;
+  border-right-color: #9f7bff;
+  animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse;
+}
+
+.ring-3 {
+  inset: 12px;
+  border-bottom-color: #3ea7ff;
+  animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.palm-icon {
+  position: absolute;
+  inset: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(159, 123, 255, 0.7);
+}
+
+.palm-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+.loading-message {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.loading-sub {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}

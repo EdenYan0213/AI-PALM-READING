@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/loadingspinner.tsx","./src/hooks/usecamera.ts","./src/pages/analysispage.tsx","./src/pages/capturepage.tsx","./src/pages/homepage.tsx","./src/pages/resultpage.tsx","./src/services/api.ts","./src/types/index.ts"],"version":"5.9.3"}

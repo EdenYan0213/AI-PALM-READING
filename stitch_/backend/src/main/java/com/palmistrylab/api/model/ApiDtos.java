@@ -35,7 +35,8 @@ public final class ApiDtos {
       Long t) {
   }
 
-  public record PalmLineSummary(String lineName, String tags, String shortInterpretation) {
+  public record PalmLineSummary(String lineName, String tags, String shortInterpretation,
+      String detailInterpretation, String actionableAdvice, String timeWindow) {
   }
 
   public record PalmAnalyzeResponse(
@@ -49,7 +50,13 @@ public final class ApiDtos {
       boolean traceConfirmed,
       String traceFeatureSummary,
       boolean llmUsed,
-      String llmStatus) {
+      String llmStatus,
+      String overallSummary,
+      String careerTip,
+      String loveTip,
+      String healthTip,
+      String luckyPeriod,
+      boolean llmEnhancedAvailable) {
   }
 
   public record UnlockDeepRequest(@NotBlank String sessionId) {

@@ -32,7 +32,7 @@ public class ApiExceptionHandler {
   public ResponseEntity<Map<String, Object>> handleAny(Exception ex) {
     Map<String, Object> payload = new HashMap<>();
     payload.put("code", "INTERNAL_ERROR");
-    payload.put("message", "服务繁忙，请稍后再试");
+    payload.put("message", "服务繁忙，请稍后再试: " + ex.getClass().getSimpleName() + ": " + (ex.getMessage() != null ? ex.getMessage().substring(0, Math.min(ex.getMessage().length(), 200)) : "null"));
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(payload);
   }
 }

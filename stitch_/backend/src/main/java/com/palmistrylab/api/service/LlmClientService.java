@@ -2,6 +2,8 @@ package com.palmistrylab.api.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
@@ -18,6 +20,8 @@ import java.util.Map;
 
 @Service
 public class LlmClientService {
+
+  private static final Logger log = LoggerFactory.getLogger(LlmClientService.class);
 
   private final RestTemplate restTemplate;
   private final ObjectMapper objectMapper;
@@ -36,7 +40,7 @@ public class LlmClientService {
       @Value("${llm.fallback-model:ZhipuAI/GLM-5.1}") String fallbackModel) {
     this.restTemplate = restTemplateBuilder
         .setConnectTimeout(Duration.ofSeconds(10))
-        .setReadTimeout(Duration.ofSeconds(45))
+        .setReadTimeout(Duration.ofSeconds(60))
         .build();
     this.objectMapper = objectMapper;
     this.enabled = enabled;
@@ -81,8 +85,6 @@ public class LlmClientService {
   }
 
   private String doChat(String modelName, String systemPrompt, String userPrompt, String imageData) {
-    Exception firstError;
-
     String promptText = "[Instruction]\n" + systemPrompt + "\n\n[Task]\n" + userPrompt;
     Object content = (imageData == null || imageData.isBlank())
         ? promptText
@@ -97,10 +99,17 @@ public class LlmClientService {
         "messages", List.of(
             Map.of("role", "user", "content", content)));
 
+    Exception firstError = null;
     try {
-      return executeChat(body);
+      log.info("LLM call model={}, withImage={}, promptLen={}", modelName, imageData != null && !imageData.isBlank(), promptText.length());
+      long start = System.currentTimeMillis();
+      String result = executeChat(body);
+      long elapsed = System.currentTimeMillis() - start;
+      log.info("LLM call model={} succeeded in {}ms, resultLen={}", modelName, elapsed, result.length());
+      return result;
     } catch (Exception e) {
       firstError = e;
+      log.warn("LLM call model={} failed (standard): {}", modelName, e.getMessage());
     }
 
     if (imageData != null && !imageData.isBlank()) {
@@ -111,20 +120,17 @@ public class LlmClientService {
           "messages", List.of(
               Map.of("role", "user", "content", promptText)));
       try {
+        log.info("LLM retry model={} text-only", modelName);
         return executeChat(textOnlyBody);
       } catch (Exception ignored) {
-        // Continue to lite mode.
+        log.warn("LLM retry model={} text-only failed: {}", modelName, ignored.getMessage());
       }
     }
 
-    try {
-      return doChatLite(modelName, userPrompt);
-    } catch (Exception liteError) {
-      throw new IllegalStateException(
-          "LLM call failed in standard/text-only/lite modes for model " + modelName + ": "
-              + firstError.getMessage() + " | " + liteError.getMessage(),
-          liteError);
-    }
+    throw new IllegalStateException(
+        "LLM call failed for model " + modelName + ": "
+            + (firstError != null ? firstError.getMessage() : "unknown"),
+        firstError);
   }
 
   private String doChatLite(String modelName, String userPrompt) {
@@ -167,7 +173,7 @@ public class LlmClientService {
           if (!outputText.isMissingNode() && !outputText.asText().isBlank()) {
             return outputText.asText();
           }
-          throw new IllegalStateException("LLM response has no choices");
+          throw new IllegalStateException("LLM response has no choices. Body: " + truncate(payloadText, 200));
         }
       }
 
@@ -190,14 +196,24 @@ public class LlmClientService {
         return text.asText();
       }
 
-      throw new IllegalStateException("LLM choice has no content");
+      throw new IllegalStateException("LLM choice has no content. Body: " + truncate(payloadText, 300));
+    } catch (IllegalStateException e) {
+      throw e;
     } catch (Exception e) {
       String preview = payloadText.replaceAll("\\s+", " ");
-      if (preview.length() > 180) {
-        preview = preview.substring(0, 180) + "...";
+      if (preview.length() > 300) {
+        preview = preview.substring(0, 300) + "...";
       }
       throw new IllegalStateException("Failed to parse LLM response: " + preview, e);
     }
+  }
+
+  private String truncate(String text, int maxLen) {
+    if (text == null) {
+      return "null";
+    }
+    String s = text.replaceAll("\\s+", " ");
+    return s.length() > maxLen ? s.substring(0, maxLen) + "..." : s;
   }
 
   private String extractContentValue(JsonNode contentNode) {

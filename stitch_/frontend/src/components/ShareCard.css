@@ -1,0 +1,554 @@
+/* ===== Share Card Container ===== */
+.share-card-wrapper {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ===== Action Buttons ===== */
+.share-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.btn-share-generate,
+.btn-share-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border: 1px solid rgba(159, 123, 255, 0.4);
+  border-radius: 14px;
+  background: rgba(159, 123, 255, 0.08);
+  color: #9f7bff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.btn-share-generate:hover,
+.btn-share-download:hover {
+  background: rgba(159, 123, 255, 0.16);
+  border-color: rgba(159, 123, 255, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(159, 123, 255, 0.2);
+}
+
+.btn-share-download:disabled {
+  opacity: 0.5;
+  cursor: wait;
+  transform: none;
+}
+
+.share-tip {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  text-align: center;
+  margin-top: 12px;
+}
+
+/* ===== Share Card Preview ===== */
+.share-card-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+/* ===== The Card ===== */
+.share-card {
+  width: 375px;
+  min-height: 600px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #080d1a;
+  box-shadow:
+    0 0 60px rgba(159, 123, 255, 0.15),
+    0 0 120px rgba(62, 167, 255, 0.08),
+    0 8px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* Background grid */
+.card-bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(146, 176, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(146, 176, 255, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+}
+
+/* Corner decorations */
+.card-corner-tl,
+.card-corner-tr,
+.card-corner-bl,
+.card-corner-br {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.card-corner-tl {
+  top: 8px; left: 8px;
+  border-top: 2px solid rgba(159, 123, 255, 0.5);
+  border-left: 2px solid rgba(159, 123, 255, 0.5);
+  border-radius: 4px 0 0 0;
+}
+
+.card-corner-tr {
+  top: 8px; right: 8px;
+  border-top: 2px solid rgba(62, 167, 255, 0.5);
+  border-right: 2px solid rgba(62, 167, 255, 0.5);
+  border-radius: 0 4px 0 0;
+}
+
+.card-corner-bl {
+  bottom: 8px; left: 8px;
+  border-bottom: 2px solid rgba(255, 77, 184, 0.5);
+  border-left: 2px solid rgba(255, 77, 184, 0.5);
+  border-radius: 0 0 0 4px;
+}
+
+.card-corner-br {
+  bottom: 8px; right: 8px;
+  border-bottom: 2px solid rgba(62, 243, 247, 0.5);
+  border-right: 2px solid rgba(62, 243, 247, 0.5);
+  border-radius: 0 0 4px 0;
+}
+
+/* Glow orbs */
+.card-glow-top {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 80px;
+  background: radial-gradient(ellipse, rgba(159, 123, 255, 0.2), transparent 70%);
+  pointer-events: none;
+}
+
+.card-glow-bottom {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  height: 80px;
+  background: radial-gradient(ellipse, rgba(62, 243, 247, 0.15), transparent 70%);
+  pointer-events: none;
+}
+
+/* ===== Card Inner ===== */
+.card-inner {
+  position: relative;
+  z-index: 1;
+  padding: 28px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ===== Header ===== */
+.card-header {
+  margin-bottom: 20px;
+}
+
+.card-brand-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-brand-icon {
+  font-size: 0.7rem;
+  color: #9f7bff;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.card-brand {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 4px;
+  background: linear-gradient(135deg, #9f7bff, #3ef3f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.card-subtitle {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 3px;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+/* ===== Hero Section ===== */
+.card-hero {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.hand-type-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.hand-type-label {
+  font-size: 0.6rem;
+  letter-spacing: 4px;
+  color: rgba(255, 255, 255, 0.3);
+  text-transform: uppercase;
+}
+
+.hand-type-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ff6f61 0%, #9f7bff 50%, #3ea7ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 30px rgba(159, 123, 255, 0.3));
+}
+
+.hero-divider {
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(159, 123, 255, 0.4), transparent);
+  margin: 0 auto 10px;
+}
+
+.personality-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.card-personality-tag {
+  padding: 4px 14px;
+  border: 1px solid;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* ===== Palm Image ===== */
+.card-image-section {
+  margin-bottom: 16px;
+}
+
+.card-image-frame {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(159, 123, 255, 0.3);
+  box-shadow: 0 0 20px rgba(159, 123, 255, 0.15);
+}
+
+.card-palm-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ===== Three Lines ===== */
+.card-lines {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.card-section-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 3px;
+  margin-bottom: 10px;
+}
+
+.card-lines-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-line-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.card-line-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.card-line-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-line-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.card-line-tags {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.card-line-desc {
+  width: 100%;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+  padding-left: 14px;
+}
+
+/* ===== Rare Mark ===== */
+.card-rare-mark {
+  width: 100%;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.rare-mark-glow {
+  position: absolute;
+  inset: -4px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 158, 42, 0.15));
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.rare-mark-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(255, 158, 42, 0.06);
+  border: 1px solid rgba(255, 158, 42, 0.25);
+  border-radius: 12px;
+}
+
+.rare-mark-star {
+  font-size: 0.9rem;
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+.rare-mark-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.rare-mark-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+}
+
+.rare-mark-rarity {
+  font-size: 0.6rem;
+  color: rgba(255, 158, 42, 0.6);
+  letter-spacing: 1px;
+}
+
+/* ===== Quote ===== */
+.card-quote {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.card-quote-text {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+  line-height: 1.6;
+  letter-spacing: 1px;
+}
+
+/* ===== CP Section ===== */
+.card-cp-section {
+  width: 100%;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-score-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 77, 184, 0.4);
+  box-shadow: 0 0 30px rgba(255, 77, 184, 0.2);
+}
+
+.cp-score-number {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #ff4db8;
+}
+
+.cp-score-label {
+  font-size: 0.6rem;
+  color: rgba(255, 77, 184, 0.6);
+  letter-spacing: 2px;
+}
+
+.cp-combo-name {
+  font-size: 1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ff4db8, #9f7bff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.cp-partner {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ===== Slogan ===== */
+.card-slogan {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.card-slogan p {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 2px;
+}
+
+/* ===== Footer ===== */
+.card-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.card-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-qr-placeholder {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.qr-pattern {
+  width: 44px;
+  height: 44px;
+}
+
+.qr-pattern svg {
+  width: 100%;
+  height: 100%;
+}
+
+.card-footer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-cta {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1px;
+}
+
+.card-date {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.card-mbti-badge {
+  padding: 4px 12px;
+  border: 1px solid;
+  border-radius: 14px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 400px) {
+  .share-card {
+    width: 320px;
+    border-radius: 16px;
+  }
+
+  .card-inner {
+    padding: 22px 18px 16px;
+  }
+
+  .hand-type-value {
+    font-size: 1.8rem;
+  }
+
+  .card-line-desc {
+    font-size: 0.64rem;
+  }
+}

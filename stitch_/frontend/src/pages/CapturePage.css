@@ -1,0 +1,210 @@
+﻿.capture-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  position: relative;
+}
+
+.capture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  z-index: 10;
+}
+
+.capture-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.btn-icon {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(150,180,255,0.2);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.camera-viewport {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  margin: 0 12px;
+  border-radius: 24px;
+  background: #000;
+  min-height: 250px;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  inset: 0;
+}
+
+.camera-starting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.camera-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* Palm Guide Overlay */
+.palm-guide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.guide-ring {
+  position: absolute;
+  border-radius: 45% 55% 50% 50% / 50% 50% 55% 45%;
+  border: 2px solid rgba(159, 123, 255, 0.25);
+}
+
+.guide-ring-outer {
+  width: 70%;
+  max-width: 320px;
+  aspect-ratio: 4/5.5;
+}
+
+.guide-ring-inner {
+  width: 65%;
+  max-width: 290px;
+  aspect-ratio: 4/5;
+  border-color: rgba(159, 123, 255, 0.12);
+  border-style: dashed;
+}
+
+.guide-hand {
+  width: 60%;
+  max-width: 260px;
+  opacity: 0.6;
+}
+
+.guide-hand svg {
+  width: 100%;
+  height: auto;
+}
+
+/* Captured preview (image outside viewport) */
+.captured-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 12px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: #000;
+  min-height: 250px;
+}
+
+.captured-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Actions section below viewport */
+.capture-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  flex-shrink: 0;
+}
+
+.btn-capture-circle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.capture-outer {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 4px solid rgba(255,255,255,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.capture-inner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  transition: background 0.2s;
+}
+
+.btn-capture-circle:hover .capture-outer {
+  transform: scale(1.05);
+}
+
+.btn-capture-circle:active .capture-inner {
+  background: rgba(255,255,255,0.7);
+}
+
+.captured-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+
+.capture-hint {
+  text-align: center;
+  padding: 0 16px 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.flash-overlay {
+  position: fixed;
+  inset: 0;
+  background: white;
+  z-index: 100;
+  animation: flashFade 0.3s ease-out;
+}
+
+@keyframes flashFade {
+  from { opacity: 0.8; }
+  to { opacity: 0; }
+}

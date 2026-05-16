@@ -1,0 +1,29 @@
+# IDE
+.idea/
+*.iml
+
+# OpenCode
+.opencode/
+.sisyphus/
+
+# Java build
+stitch_/backend/target/
+*.class
+*.jar
+*.war
+
+# Logs
+*.log
+stitch_/backend/logs/
+
+# Database
+*.db
+stitch_/backend/data/
+
+# Node
+stitch_/frontend/node_modules/
+stitch_/frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
