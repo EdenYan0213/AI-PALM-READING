@@ -33,10 +33,10 @@ const CapturePage: React.FC = () => {
     } catch (err: any) {
       const msg =
         err.name === "NotAllowedError"
-          ? "ÇëÔÊÐíÊ¹ÓÃÉãÏñÍ··ÃÎÊÈ¨ÏÞ"
+          ? "è¯·å…è®¸ä½¿ç”¨æ‘„åƒå¤´æƒé™"
           : err.name === "NotFoundError"
-          ? "Î´¼ì²âµ½ÉãÏñÍ·Éè±¸"
-          : `Æô¶¯Ê§°Ü: ${err.message}`;
+          ? "æœªæ£€æµ‹åˆ°æ‘„åƒå¤´è®¾å¤‡"
+          : `å¯åŠ¨å¤±è´¥: ${err.message}`;
       setError(msg);
     }
   }, [facingMode]);
@@ -107,7 +107,7 @@ const CapturePage: React.FC = () => {
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="capture-title">ÅÄÉãÕÆÎÆ</h1>
+        <h1 className="capture-title">æ‹æ‘„æŽŒçº¹</h1>
         <button className="btn-icon" onClick={toggleFacing}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
@@ -125,7 +125,7 @@ const CapturePage: React.FC = () => {
                 <path d="M12 8v4M12 16h.01"/>
               </svg>
               <p>{error}</p>
-              <button className="btn-primary" onClick={startCamera}>ÖØÊÔ</button>
+              <button className="btn-primary" onClick={startCamera}>é‡è¯•</button>
             </div>
           ) : (
             <>
@@ -145,7 +145,7 @@ const CapturePage: React.FC = () => {
                     <path d="M65 110 Q70 160 85 200 Q90 215 100 230" stroke="rgba(255,111,97,0.4)" strokeWidth="2"/>
                     <path d="M55 130 Q100 125 145 135" stroke="rgba(62,167,255,0.4)" strokeWidth="2"/>
                     <path d="M60 105 Q100 85 140 110" stroke="rgba(255,77,184,0.4)" strokeWidth="2"/>
-                    <text x="30" y="70" fill="rgba(255,255,255,0.35)" fontSize="10" fontFamily="inherit">½«ÊÖÕÆ¶Ô×¼¿òÄÚ</text>
+                    <text x="30" y="70" fill="rgba(255,255,255,0.35)" fontSize="10" fontFamily="inherit">è¯·å°†æ‰‹æŽŒå¯¹å‡†æ¡†å†…</text>
                   </svg>
                 </div>
               </div>
@@ -157,7 +157,7 @@ const CapturePage: React.FC = () => {
                     borderTopColor: "#9f7bff",
                     borderRadius: "50%",
                   }} />
-                  <p>Æô¶¯ÉãÏñÍ·...</p>
+                  <p>å¯åŠ¨æ‘„åƒå¤´...</p>
                 </div>
               )}
             </>
@@ -165,7 +165,7 @@ const CapturePage: React.FC = () => {
         </div>
       ) : (
         <div className="captured-preview fade-in">
-          <img src={capturedImage} alt="ÕÆÎÆÕÕÆ¬" className="captured-img" />
+          <img src={capturedImage} alt="æŽŒçº¹ç…§ç‰‡" className="captured-img" />
         </div>
       )}
 
@@ -183,17 +183,17 @@ const CapturePage: React.FC = () => {
             )}
             {!stream && !error && (
               <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
-                ´ÓÏà²áÑ¡Ôñ
+                ä»Žç›¸å†Œé€‰æ‹©
               </button>
             )}
           </>
         ) : (
           <div className="captured-actions">
             <button className="btn-primary" onClick={confirmAndAnalyze}>
-              ·ÖÎöÕÆÎÆ
+              åˆ†æžæŽŒçº¹
             </button>
             <button className="btn-secondary" onClick={retake}>
-              ÖØÐÂÅÄÉã
+              é‡æ–°æ‹æ‘„
             </button>
           </div>
         )}
@@ -208,7 +208,7 @@ const CapturePage: React.FC = () => {
       />
 
       <p className="capture-hint">
-        ÇëÔÚ¹âÏß³ä×ãµÄ»·¾³ÏÂÅÄÉã£¬ÊÖÕÆ×ÔÈ»ÕÅ¿ª
+        è¯·åœ¨å…‰çº¿å……è¶³çš„çŽ¯å¢ƒä¸‹æ‹æ‘„ï¼Œæ‰‹æŽŒè‡ªç„¶å¼ å¼€
       </p>
     </div>
   );

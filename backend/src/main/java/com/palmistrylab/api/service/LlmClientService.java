@@ -39,8 +39,8 @@ public class LlmClientService {
       @Value("${llm.model}") String model,
       @Value("${llm.fallback-model:ZhipuAI/GLM-5.1}") String fallbackModel) {
     this.restTemplate = restTemplateBuilder
-        .setConnectTimeout(Duration.ofSeconds(10))
-        .setReadTimeout(Duration.ofSeconds(60))
+        .setConnectTimeout(Duration.ofSeconds(20))
+        .setReadTimeout(Duration.ofSeconds(120))
         .build();
     this.objectMapper = objectMapper;
     this.enabled = enabled;
