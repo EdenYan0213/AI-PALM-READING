@@ -25,7 +25,15 @@
 <body class="text-slate-800 min-h-screen pb-20">
   <main class="max-w-2xl mx-auto px-5 py-6 space-y-5">
     <header class="glass rounded-3xl p-5">
-      <p class="text-xs text-pink-600">Weekly Palm Diary</p>
+      <div class="flex items-center justify-between gap-3">
+        <a href="../light_1/code.html"
+          class="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-white px-3 py-2 text-xs text-pink-700 hover:bg-pink-50 transition-colors"
+          aria-label="返回首页">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          返回
+        </a>
+        <p class="text-xs text-pink-600">Weekly Palm Diary</p>
+      </div>
       <h1 class="mt-1 text-2xl font-semibold text-pink-700">记录你本周的掌中气色</h1>
       <p class="mt-2 text-sm text-slate-600">快速记录：跳过描线，AI将基于本周照片生成简洁版波动报告。</p>
     </header>
@@ -94,7 +102,9 @@
 
   <script>
     (function () {
-      const API_BASE = 'http://localhost:8080/api/v1';
+      const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
       const USER_KEY = 'palmistry.userId';
       const CAPTURE_KEY = 'palmistry.capturedImage';
       const REPORT_CACHE_KEY = 'palmistry.weeklyRecord';
@@ -118,9 +128,28 @@
       const saveNoteButton = document.getElementById('saveNoteButton');
       const noteStatusText = document.getElementById('noteStatusText');
       const monthlyLink = document.getElementById('monthlyLink');
+      const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
 
       let imageData = localStorage.getItem(CAPTURE_KEY) || '';
       let currentRecordId = null;
+
+      let imageValidated = Boolean(localStorage.getItem(CAPTURE_KEY));
+
+      const validatePalmImage = async (dataUrl) => {
+        const response = await fetch(API_BASE + '/palm/validate-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageData: dataUrl })
+        });
+
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status);
+        }
+
+        return response.json();
+      };
 
       const today = new Date();
       const minDate = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
@@ -166,11 +195,26 @@
         const file = photoInput.files && photoInput.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = () => {
-          imageData = String(reader.result || '');
-          localStorage.setItem(CAPTURE_KEY, imageData);
-          previewImage.src = imageData;
-          previewWrap.classList.remove('hidden');
+        reader.onload = async () => {
+          const dataUrl = String(reader.result || '');
+          try {
+            const validation = await validatePalmImage(dataUrl);
+            if (!validation.accepted) {
+              imageData = '';
+              imageValidated = false;
+              previewWrap.classList.add('hidden');
+              statusText.textContent = validation.reason || '请输入手相图片';
+              return;
+            }
+            imageData = dataUrl;
+            imageValidated = true;
+            localStorage.setItem(CAPTURE_KEY, imageData);
+            previewImage.src = imageData;
+            previewWrap.classList.remove('hidden');
+            statusText.textContent = validation.source === 'ai' ? 'AI 已确认是手掌，可以开始生成报告' : '照片已通过手掌校验，可以开始生成报告';
+          } catch (error) {
+            statusText.textContent = '识别服务暂时不可用，请稍后重试';
+          }
         };
         reader.readAsDataURL(file);
       });
@@ -179,6 +223,20 @@
         if (!imageData) {
           statusText.textContent = '请先上传手掌照片';
           return;
+        }
+
+        if (!imageValidated) {
+          try {
+            const validation = await validatePalmImage(imageData);
+            if (!validation.accepted) {
+              statusText.textContent = validation.reason || '请输入手相图片';
+              return;
+            }
+            imageValidated = true;
+          } catch (error) {
+            statusText.textContent = '识别服务暂时不可用，请稍后重试';
+            return;
+          }
         }
 
         submitButton.disabled = true;

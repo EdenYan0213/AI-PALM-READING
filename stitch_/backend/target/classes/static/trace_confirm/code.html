@@ -80,6 +80,12 @@
 <body>
   <header class="px-5 pt-5 pb-3 max-w-3xl mx-auto">
     <div class="flex items-center justify-between">
+      <a href="../ai..._light/code.html"
+        class="inline-flex items-center gap-1 rounded-full border border-blue-200/35 bg-white/10 px-3 py-2 text-xs text-blue-50 hover:bg-white/15 transition-colors"
+        aria-label="返回分析页">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+        返回
+      </a>
       <h1 class="text-lg sm:text-xl font-semibold tracking-wide">描绘你的手相密码</h1>
       <button id="skipButton" class="text-xs sm:text-sm text-blue-100/85 hover:text-white underline underline-offset-4">跳过描绘，直接查看</button>
     </div>
@@ -136,7 +142,9 @@
 
   <script>
     (function () {
-      const API_BASE = "http://localhost:8080/api/v1";
+      const API_BASE = window.location.protocol === "file:"
+        ? "http://localhost:8080/api/v1"
+        : window.location.origin + "/api/v1";
       const CAPTURE_KEY = "palmistry.capturedImage";
       const REPORT_CACHE_KEY = "palmistry.singleReport";
       const ANALYZE_ERROR_KEY = "palmistry.analyzeError";
@@ -387,6 +395,25 @@
         };
       };
 
+      const resizeImageDataUrl = (dataUrl, maxSide = 1024, quality = 0.78) => new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(image.width * scale));
+          canvas.height = Math.max(1, Math.round(image.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        image.onerror = () => resolve(dataUrl);
+        image.src = dataUrl;
+      });
+
       const submitAnalyze = async (withTraces) => {
         submitStatus.textContent = "正在生成你的专属报告...";
         confirmButton.disabled = true;
@@ -395,12 +422,13 @@
 
         try {
           localStorage.removeItem(ANALYZE_ERROR_KEY);
+          const submitImageData = await resizeImageDataUrl(imageData);
           let response;
           if (recordFlow === "weekly") {
             const weeklyBody = {
               userId: localStorage.getItem(USER_KEY),
               recordMode: withTraces ? "full" : "quick",
-              imageData,
+              imageData: submitImageData,
               recordDate: new Date().toISOString().slice(0, 10)
             };
             if (withTraces) {
@@ -417,7 +445,7 @@
               source: "camera",
               handSide: "left",
               gender: "unknown",
-              imageData,
+              imageData: submitImageData,
               recordMode: "single"
             };
             if (withTraces) {

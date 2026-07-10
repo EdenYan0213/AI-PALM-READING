@@ -132,6 +132,11 @@
   <!-- Top Navigation Bar (Shared Component Strategy) -->
   <header
     class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-full mt-4 mx-6 border border-white/60 dark:border-white/10 shadow-[0_0_15px_rgba(250,218,221,0.3)]">
+    <a href="../light_1/code.html"
+      class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
+      aria-label="返回首页">
+      <span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+    </a>
     <div class="flex items-center gap-2">
       <span class="material-symbols-outlined text-pink-500" data-icon="auto_awesome">auto_awesome</span>
       <span class="text-xl font-bold text-pink-500 italic tracking-tight font-headline-md">Palmistry AI</span>
@@ -149,6 +154,7 @@
   <main class="relative flex-grow w-full h-full flex flex-col items-center justify-center pt-24 pb-40">
     <!-- Simulated Camera Background -->
     <div class="absolute inset-0 z-0">
+      <video id="cameraPreview" class="hidden w-full h-full object-cover camera-blur-bg" autoplay muted playsinline></video>
       <img alt="Camera Preview" class="w-full h-full object-cover camera-blur-bg"
         data-alt="Soft focused close-up of a human palm with warm, bright natural lighting and ethereal airy atmosphere"
         src="https://lh3.googleusercontent.com/aida-public/AB6AXuDgxR_gUvh7DP0jjHH0QbHK-fJN1qPoqAuIXQtfOOoREGLs8Raic7lNjan7e-VMzG6sugunHONoBv7EXWJpPg57AcH63_rffiWq-KHNMFGXtraQw_5KSpgnsVgkDcDBYl0UXwG3e6reKayawL-NOTgIdUYb9OZbDihA4ZzXq7Ky_7i5pg3eOeY8FXRSh48ChaLORdmlHmx-fCVBX9nechVtgSydl2FcDTTIXK6W-39Kr6JfY9E5WwK7a1MiAWSMtokjMpwJOVJk8w" />
@@ -161,6 +167,10 @@
       <p class="text-primary font-headline-md text-label-md tracking-widest text-center">请将手掌对齐引导线</p>
       <p class="text-[11px] text-primary/70 text-center mt-1">光线充足更精准，建议男左女右</p>
     </div>
+    <p id="cameraStatus"
+      class="relative z-10 mb-3 px-4 py-2 rounded-full bg-white/50 backdrop-blur-md border border-white/60 text-xs text-pink-700 shadow-sm">
+      点击中间按钮打开相机，或用左侧按钮上传相册照片。
+    </p>
     <div
       class="relative z-10 mb-4 w-[280px] rounded-[28px] border border-white/70 bg-white/60 backdrop-blur-md overflow-hidden shadow-lg hidden"
       id="photoPreviewWrap">
@@ -195,7 +205,7 @@
           src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJfMSYNOAvN1U24qAbi_exYWRFmyCjkbeiI6BFvizgdnxLF-dUGqZNIOaF9w46x4KLfAg3ysI2dV_PlNoInjNfDvfzGCaQ3SfhkgfxXirfHacLDe-Duv0U44gLL5EyCGgDVpyKk115CbfSckTFAjyjOEk4ILPodY0opEHa5mgrWqWeX-U3-FHPMpv3xh3B_pb4iTalVApRXyFHi_16Wdq4UimHu13D_WI6Y8f6aYD_Aop32lUrar6XorBQzlR5PFt7bnBbFFHMw" />
       </button>
       <!-- Shutter Button -->
-      <button class="relative group" id="startAnalyzeButton" type="button">
+      <button class="relative group" id="startAnalyzeButton" type="button" aria-label="拍摄手掌照片">
         <div class="absolute -inset-4 bg-pink-200/30 rounded-full blur-xl group-hover:bg-pink-300/40 transition-all">
         </div>
         <div
@@ -208,18 +218,146 @@
             const photoInput = document.getElementById('photoInput');
             const pickAlbumButton = document.getElementById('pickAlbumButton');
             const startAnalyzeButton = document.getElementById('startAnalyzeButton');
+            const cameraPreview = document.getElementById('cameraPreview');
             const photoPreviewWrap = document.getElementById('photoPreviewWrap');
             const photoPreview = document.getElementById('photoPreview');
+            const cameraStatus = document.getElementById('cameraStatus');
+            const closeCameraButton = document.querySelector('button[data-icon="cached"]')?.closest('button');
             const captureKey = 'palmistry.capturedImage';
             const captureMetaKey = 'palmistry.capturedMeta';
             const reportCacheKey = 'palmistry.singleReport';
             const analyzeErrorKey = 'palmistry.analyzeError';
             const traceKey = 'palmistry.tracePayload';
+            const API_BASE = window.location.protocol === 'file:'
+              ? 'http://localhost:8080/api/v1'
+              : window.location.origin + '/api/v1';
+            let cameraStream = null;
 
-            const openPicker = () => photoInput.click();
+            const setStatus = (message, isError) => {
+              cameraStatus.textContent = message;
+              cameraStatus.className = isError
+                ? 'relative z-10 mb-3 px-4 py-2 rounded-full bg-rose-50/85 backdrop-blur-md border border-rose-200 text-xs text-rose-700 shadow-sm'
+                : 'relative z-10 mb-3 px-4 py-2 rounded-full bg-white/50 backdrop-blur-md border border-white/60 text-xs text-pink-700 shadow-sm';
+            };
+
+            const validatePalmImage = async (dataUrl) => {
+              const response = await fetch(API_BASE + '/palm/validate-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageData: dataUrl })
+              });
+
+              if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+              }
+
+              return response.json();
+            };
+
+            const resizeImageDataUrl = (dataUrl, maxSide = 1024, quality = 0.78) => new Promise((resolve) => {
+              const image = new Image();
+              image.onload = () => {
+                const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(image.width * scale));
+                canvas.height = Math.max(1, Math.round(image.height * scale));
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                  resolve(dataUrl);
+                  return;
+                }
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+              };
+              image.onerror = () => resolve(dataUrl);
+              image.src = dataUrl;
+            });
+
+            const stopCamera = () => {
+              if (cameraStream) {
+                cameraStream.getTracks().forEach((track) => track.stop());
+                cameraStream = null;
+              }
+              cameraPreview.srcObject = null;
+              cameraPreview.classList.add('hidden');
+            };
+
+            const saveCapture = async (dataUrl, meta) => {
+              localStorage.setItem(captureKey, String(dataUrl));
+              localStorage.setItem(captureMetaKey, JSON.stringify(meta));
+              localStorage.removeItem(reportCacheKey);
+              localStorage.removeItem(analyzeErrorKey);
+              localStorage.removeItem(traceKey);
+              photoPreview.src = String(dataUrl);
+              photoPreviewWrap.classList.remove('hidden');
+              window.location.href = '../ai..._light/code.html?source=' + encodeURIComponent(meta.source || 'photo');
+            };
+
+            const openPicker = () => {
+              stopCamera();
+              photoInput.click();
+            };
+
+            const startCamera = async () => {
+              if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setStatus('当前浏览器不支持直接打开摄像头，已切换到相册上传。', true);
+                openPicker();
+                return;
+              }
+
+              try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                cameraPreview.srcObject = cameraStream;
+                cameraPreview.classList.remove('hidden');
+                setStatus('摄像头已打开，再次点击中间按钮即可拍摄。');
+              } catch (error) {
+                setStatus('无法打开摄像头，请检查浏览器权限后改用相册上传。', true);
+                openPicker();
+              }
+            };
+
+            const captureFromCamera = async () => {
+              if (!cameraStream || cameraPreview.videoWidth === 0 || cameraPreview.videoHeight === 0) {
+                await startCamera();
+                return;
+              }
+
+              const canvas = document.createElement('canvas');
+              canvas.width = cameraPreview.videoWidth;
+              canvas.height = cameraPreview.videoHeight;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                setStatus('摄像头暂时不可用，请改用相册上传。', true);
+                return;
+              }
+
+              ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
+              const dataUrl = await resizeImageDataUrl(canvas.toDataURL('image/jpeg', 0.9));
+              let validation;
+              try {
+                setStatus('正在识别图片是否为手相...');
+                validation = await validatePalmImage(dataUrl);
+              } catch (error) {
+                setStatus('识别服务暂时不可用，请稍后重试或改用相册上传。', true);
+                return;
+              }
+
+              if (!validation.accepted) {
+                setStatus(validation.reason || '这张图片不是手相，请上传清晰的手掌照片。', true);
+                return;
+              }
+
+              setStatus(validation.source === 'ai' ? 'AI 已确认是手掌，正在进入分析页...' : '手掌识别通过，正在进入分析页...');
+              stopCamera();
+              await saveCapture(dataUrl, { name: 'camera-shot.jpg', type: 'image/jpeg', source: 'camera' });
+            };
 
             pickAlbumButton.addEventListener('click', openPicker);
-            startAnalyzeButton.addEventListener('click', openPicker);
+            startAnalyzeButton.addEventListener('click', captureFromCamera);
+            closeCameraButton?.addEventListener('click', () => {
+              stopCamera();
+              setStatus('摄像头已关闭，可以继续上传相册照片。');
+            });
 
             photoInput.addEventListener('change', async () => {
               const file = photoInput.files && photoInput.files[0];
@@ -228,24 +366,32 @@
               }
 
               const reader = new FileReader();
-              reader.onload = () => {
-                const dataUrl = reader.result;
-                localStorage.setItem(captureKey, String(dataUrl));
-                localStorage.setItem(captureMetaKey, JSON.stringify({ name: file.name, type: file.type, size: file.size }));
-                localStorage.removeItem(reportCacheKey);
-                localStorage.removeItem(analyzeErrorKey);
-                localStorage.removeItem(traceKey);
-                photoPreview.src = String(dataUrl);
-                photoPreviewWrap.classList.remove('hidden');
-                window.location.href = '../ai..._light/code.html?source=photo';
+              reader.onload = async () => {
+                const dataUrl = await resizeImageDataUrl(String(reader.result || ''));
+                try {
+                  setStatus('正在识别图片是否为手相...');
+                  const validation = await validatePalmImage(dataUrl);
+                  if (!validation.accepted) {
+                    setStatus(validation.reason || '这张图片不是手相，请上传清晰的手掌照片。', true);
+                    localStorage.removeItem(captureKey);
+                    localStorage.removeItem(captureMetaKey);
+                    return;
+                  }
+                  setStatus(validation.source === 'ai' ? 'AI 已确认是手掌，正在进入分析页...' : '手掌识别通过，正在进入分析页...');
+                  saveCapture(dataUrl, { name: file.name, type: file.type, size: file.size, source: 'album' });
+                } catch (error) {
+                  setStatus('识别服务暂时不可用，请稍后重试。', true);
+                }
               };
               reader.readAsDataURL(file);
+              photoInput.value = '';
             });
           })();
       </script>
       <!-- Back/Switch Button -->
       <button
-        class="w-12 h-12 rounded-full bg-white/30 backdrop-blur-md border border-white/40 flex items-center justify-center text-pink-500 hover:bg-white/50 transition-all active:scale-90">
+        class="w-12 h-12 rounded-full bg-white/30 backdrop-blur-md border border-white/40 flex items-center justify-center text-pink-500 hover:bg-white/50 transition-all active:scale-90"
+        type="button" aria-label="关闭摄像头" title="关闭摄像头">
         <span class="material-symbols-outlined" data-icon="cached">cached</span>
       </button>
     </div>

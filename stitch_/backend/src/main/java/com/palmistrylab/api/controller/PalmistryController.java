@@ -68,6 +68,12 @@ public class PalmistryController {
     return ResponseEntity.ok(palmistryService.llmPing(request.prompt()));
   }
 
+  @PostMapping("/palm/validate-image")
+  public ResponseEntity<ApiDtos.PalmImageValidationResponse> validatePalmImage(
+      @Valid @RequestBody ApiDtos.PalmImageValidationRequest request) {
+    return ResponseEntity.ok(palmistryService.validatePalmImage(request.imageData()));
+  }
+
   @PostMapping("/record/weekly")
   public ResponseEntity<ApiDtos.WeeklyRecordResponse> weeklyRecord(
       @Valid @RequestBody ApiDtos.WeeklyRecordRequest request) {

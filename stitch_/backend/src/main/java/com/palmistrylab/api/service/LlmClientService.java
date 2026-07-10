@@ -10,6 +10,8 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
@@ -36,7 +38,7 @@ public class LlmClientService {
       @Value("${llm.fallback-model:ZhipuAI/GLM-5.1}") String fallbackModel) {
     this.restTemplate = restTemplateBuilder
         .setConnectTimeout(Duration.ofSeconds(10))
-        .setReadTimeout(Duration.ofSeconds(45))
+        .setReadTimeout(Duration.ofSeconds(90))
         .build();
     this.objectMapper = objectMapper;
     this.enabled = enabled;
@@ -122,7 +124,7 @@ public class LlmClientService {
     } catch (Exception liteError) {
       throw new IllegalStateException(
           "LLM call failed in standard/text-only/lite modes for model " + modelName + ": "
-              + firstError.getMessage() + " | " + liteError.getMessage(),
+              + summarizeException(firstError) + " | " + summarizeException(liteError),
           liteError);
     }
   }
@@ -143,11 +145,18 @@ public class LlmClientService {
     headers.setBearerAuth(apiKey);
 
     HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-    ResponseEntity<String> response = restTemplate.exchange(
-        baseUrl + "/chat/completions",
-        HttpMethod.POST,
-        requestEntity,
-        String.class);
+    ResponseEntity<String> response;
+    try {
+      response = restTemplate.exchange(
+          baseUrl + "/chat/completions",
+          HttpMethod.POST,
+          requestEntity,
+          String.class);
+    } catch (HttpStatusCodeException e) {
+      throw new IllegalStateException("HTTP " + e.getStatusCode().value() + ": " + shorten(e.getResponseBodyAsString()), e);
+    } catch (ResourceAccessException e) {
+      throw new IllegalStateException("Network/timeout: " + e.getMessage(), e);
+    }
 
     String payloadText = response.getBody();
     if (payloadText == null || payloadText.isBlank()) {
@@ -231,5 +240,24 @@ public class LlmClientService {
       }
     }
     return contentNode.asText();
+  }
+
+  private String summarizeException(Exception error) {
+    if (error == null) {
+      return "unknown";
+    }
+    String message = error.getMessage();
+    return shorten(message == null || message.isBlank() ? error.getClass().getSimpleName() : message);
+  }
+
+  private String shorten(String value) {
+    if (value == null || value.isBlank()) {
+      return "";
+    }
+    String preview = value.replaceAll("\\s+", " ").trim();
+    if (preview.length() > 260) {
+      return preview.substring(0, 260) + "...";
+    }
+    return preview;
   }
 }

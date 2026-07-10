@@ -21,7 +21,13 @@
 
 <body class="text-gray-800 min-h-screen pb-24">
   <header class="sticky top-0 z-10 px-5 py-4 bg-white/70 backdrop-blur border-b border-pink-100">
-    <div class="max-w-2xl mx-auto flex items-center justify-between">
+    <div class="max-w-2xl mx-auto flex items-center justify-between gap-3">
+      <a href="../trace_confirm/code.html"
+        class="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-white px-3 py-2 text-xs text-pink-700 hover:bg-pink-50 transition-colors"
+        aria-label="返回描绘页">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+        返回
+      </a>
       <h1 class="text-lg font-semibold text-pink-700">Palmistry AI 报告</h1>
       <span id="llmBadge" class="text-xs px-3 py-1 rounded-full bg-pink-100 text-pink-700">待确认</span>
     </div>
@@ -87,7 +93,9 @@
 
   <script>
     (function () {
-      const API_BASE = 'http://localhost:8080/api/v1';
+      const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
       const REPORT_CACHE_KEY = 'palmistry.singleReport';
       const ANALYZE_ERROR_KEY = 'palmistry.analyzeError';
       const CAPTURE_KEY = 'palmistry.capturedImage';

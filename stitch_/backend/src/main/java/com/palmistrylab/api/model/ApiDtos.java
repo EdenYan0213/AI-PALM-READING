@@ -127,6 +127,16 @@ public final class ApiDtos {
   public record LlmPingResponse(boolean live, String modelOutput) {
   }
 
+  public record PalmImageValidationRequest(@NotBlank String imageData) {
+  }
+
+  public record PalmImageValidationResponse(
+      boolean accepted,
+      double confidence,
+      String reason,
+      String source) {
+  }
+
   public record WeeklyRecordRequest(
       @NotBlank String userId,
       @NotBlank String recordMode,

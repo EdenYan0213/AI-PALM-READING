@@ -20,7 +20,7 @@ public class MonthlyReportEntity {
   @Column(name = "user_id", nullable = false, length = 64)
   private String userId;
 
-  @Column(name = "year_month", nullable = false, length = 7)
+  @Column(name = "report_month", nullable = false, length = 7)
   private String yearMonth;
 
   @Column(name = "record_count", nullable = false)

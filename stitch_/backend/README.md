@@ -11,7 +11,7 @@ cd backend
 mvn spring-boot:run
 ```
 
-Default profile: `dev` (H2).
+Default profile: `dev` (MySQL).
 
 Run with explicit profile:
 ```bash
@@ -22,12 +22,14 @@ mvn spring-boot:run -Dspring-boot.run.profiles=dev
 mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
-For `prod`, configure env vars:
+For `dev` and `prod`, configure env vars:
 ```bash
 MYSQL_URL=jdbc:mysql://localhost:3306/palmistry?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai
 MYSQL_USERNAME=root
 MYSQL_PASSWORD=your_password
 ```
+
+The default URL also enables `createDatabaseIfNotExist=true`, so the local schema can be created automatically when the MySQL user has permission.
 
 ## LLM Integration (ModelScope OpenAI-compatible)
 The backend supports OpenAI-compatible chat completion and can generate report text from real model output.
@@ -35,9 +37,9 @@ The backend supports OpenAI-compatible chat completion and can generate report t
 Env vars:
 ```bash
 LLM_ENABLED=true
-LLM_BASE_URL=https://api-inference.modelscope.cn/v1
-LLM_API_KEY=your_modelscope_token
-LLM_MODEL=Qwen/Qwen3.5-397B-A17B
+LLM_BASE_URL=https://api.siliconflow.cn/v1
+LLM_API_KEY=your_provider_token
+LLM_MODEL=Pro/moonshotai/Kimi-K2.6
 LLM_FALLBACK_MODEL=ZhipuAI/GLM-5.1
 ```
 
@@ -48,9 +50,7 @@ When enabled, these endpoints will produce LLM-generated content (with safe fall
 
 Service starts at `http://localhost:8080`.
 
-H2 console: `http://localhost:8080/h2-console`
-- JDBC URL: `jdbc:h2:file:./data/palmistry-db`
-- User: `sa`
+Tests use an in-memory H2 datasource in MySQL compatibility mode.
 
 ## API
 ### Health
@@ -152,18 +152,29 @@ H2 console: `http://localhost:8080/h2-console`
 ```
 
 ## Frontend Integration
-Current frontend pages use:
-- `http://localhost:8080/api/v1/palm/analyze`
-- `http://localhost:8080/api/v1/palm/unlock-deep`
-- `http://localhost:8080/api/v1/palm/rare-mark`
-- `http://localhost:8080/api/v1/cp/analyze`
-- `http://localhost:8080/api/v1/cp/unlock-deep`
+Static frontend pages use the current origin by default:
+- `window.location.origin + '/api/v1'`
 
-If you change backend port/domain, update `API_BASE` constant in:
-- `ai..._light/code.html`
-- `light_3/code.html`
-- `cp_light/code.html`
+When opened directly from `file://`, pages fall back to:
+- `http://localhost:8080/api/v1`
 
 Admin dashboard:
 - `../admin_metrics.html` (workspace page)
 - Reads: `GET /api/v1/metrics/summary`
+
+## Production Startup
+Set secrets and public origins through environment variables. Do not commit provider keys.
+
+```bash
+export LLM_ENABLED=true
+export LLM_API_KEY=your_provider_token
+export CORS_ALLOWED_ORIGINS=https://your-domain.com
+export RATE_LIMIT_ENABLED=true
+export RATE_LIMIT_MAX_REQUESTS=90
+export RATE_LIMIT_WINDOW_SECONDS=60
+export MYSQL_URL='jdbc:mysql://your-db-host:3306/palmistry?useUnicode=true&characterEncoding=UTF-8&useSSL=true&serverTimezone=Asia/Shanghai'
+export MYSQL_USERNAME=palmistry
+export MYSQL_PASSWORD=your_db_password
+
+mvn spring-boot:run -Dspring-boot.run.profiles=prod
+```

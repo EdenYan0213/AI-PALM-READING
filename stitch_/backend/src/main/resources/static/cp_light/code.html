@@ -136,6 +136,11 @@
   <!-- Top Navigation -->
   <header
     class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-full mt-4 mx-6 border border-white/60 dark:border-white/10 shadow-[0_0_15px_rgba(250,218,221,0.3)]">
+    <a href="../light_1/code.html"
+      class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
+      aria-label="返回首页">
+      <span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+    </a>
     <div class="flex items-center gap-2">
       <span class="material-symbols-outlined text-pink-400" data-icon="auto_awesome">auto_awesome</span>
       <h1 class="text-xl font-bold text-pink-500 dark:text-pink-300 italic font-['Plus_Jakarta_Sans'] tracking-tight">
@@ -314,7 +319,9 @@
   </div>
   <script>
       (function () {
-        const API_BASE = 'http://localhost:8080/api/v1';
+        const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
         const CP_CACHE_KEY = 'palmistry.cpReport';
 
         const shareCpButton = document.getElementById('shareCpButton');

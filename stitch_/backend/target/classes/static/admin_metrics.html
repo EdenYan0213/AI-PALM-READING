@@ -281,15 +281,17 @@
       <aside class="card">
         <div class="kpi-label">Data Status</div>
         <p id="statusText" class="status">准备连接后端...</p>
-        <p class="status">默认接口地址：<code>http://localhost:8080/api/v1/metrics/summary</code></p>
-        <p class="status">如果后端端口变化，请修改页面脚本中的 <code>API_BASE</code>。</p>
+        <p class="status">默认接口地址：当前站点同源 <code>/api/v1/metrics/summary</code></p>
+        <p class="status">如果直接打开本地 HTML 文件，页面会回退到 <code>http://localhost:8080/api/v1</code>。</p>
       </aside>
     </section>
   </div>
 
   <script>
     (function () {
-      const API_BASE = 'http://localhost:8080/api/v1';
+      const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
       const refreshBtn = document.getElementById('refreshBtn');
       const statusText = document.getElementById('statusText');
 

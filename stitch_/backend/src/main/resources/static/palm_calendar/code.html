@@ -29,7 +29,13 @@
 <body class="text-slate-800 min-h-screen pb-24">
   <main class="max-w-3xl mx-auto px-5 py-6 space-y-5">
     <header class="glass rounded-3xl p-5">
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between gap-3">
+        <a href="../weekly_quick/code.html"
+          class="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-white px-3 py-2 text-xs text-pink-700 hover:bg-pink-50 transition-colors"
+          aria-label="返回本周记录页">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          返回
+        </a>
         <h1 class="text-2xl font-semibold text-pink-700">手相日历</h1>
         <a href="../weekly_quick/code.html" class="text-xs text-pink-600 underline">开始本周记录</a>
       </div>
@@ -67,7 +73,9 @@
 
   <script>
     (function () {
-      const API_BASE = 'http://localhost:8080/api/v1';
+      const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
       const USER_KEY = 'palmistry.userId';
       const calendarGrid = document.getElementById('calendarGrid');
       const monthTitle = document.getElementById('monthTitle');
