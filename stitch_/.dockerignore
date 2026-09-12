@@ -1,0 +1,8 @@
+# 构建上下文瘦身：本目录不应进入镜像构建上下文的内容
+backend/target/
+backend/logs/
+backend/data/
+frontend/node_modules/
+**/.DS_Store
+.env
+.env.local

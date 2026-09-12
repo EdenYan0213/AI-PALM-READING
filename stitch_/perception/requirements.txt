@@ -1,6 +1,6 @@
 fastapi==0.115.6
 uvicorn==0.34.0
-mediapipe==0.10.21
+mediapipe==0.10.18  # arm64 wheel 可用的最新版本（0.10.21 无 aarch64 发布，1.x 为破坏性 API）
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pydantic==2.10.4
