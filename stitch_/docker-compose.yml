@@ -1,0 +1,50 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: palmistry
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MYSQL_URL: jdbc:mysql://mysql:3306/palmistry?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      USER_TOKEN_SECRET: ${USER_TOKEN_SECRET:-palmistry-local-dev-secret}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PERCEPTION_BASE_URL: ${PERCEPTION_BASE_URL:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      PHOTOS_DIR: /app/data/photos
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - photos-data:/app/data/photos
+
+  # 感知边车（可选）：docker compose --profile perception up
+  perception:
+    profiles: ["perception"]
+    build: ./perception
+    ports:
+      - "8100:8100"
+
+volumes:
+  mysql-data:
+  photos-data:

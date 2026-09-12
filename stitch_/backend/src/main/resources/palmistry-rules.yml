@@ -1,0 +1,84 @@
+# 手相确定性规则阈值（TD §4：阈值外置，改配置不改代码）
+# 缺省值与 PalmRules 代码内兜底一致；仅覆盖需要调整的键即可。
+
+trace:
+  sample-min-distance: 3.0
+  length:
+    long-ratio: 1.15        # 路径长度/对角线 ≥ 此值 → “长”
+    medium-ratio: 0.75      # ≥ 此值 → “中等”，否则 “短”
+  curvature:
+    large-ratio: 1.35       # 路径长度/弦长 ≥ 此值 → “大”
+    medium-ratio: 1.15      # ≥ 此值 → “中”，否则 “小”
+  jumps:
+    min-segment-px: 18.0    # 断续判定：单段超过 max(此值, 均值*倍数) 记一次跳跃
+    avg-multiplier: 3.2
+    break-threshold: 2      # 跳跃数 ≥ 此值 → “断续”
+  fork:
+    min-points: 8
+    tail-ratio: 0.8         # 末端 20% 参与分叉判定
+    spread-ratio: 0.12      # 末端离散度/对角线
+    angle-bucket-degrees: 25.0
+    min-buckets: 2
+  events:
+    loop-min-points-gap: 4
+    loop-max-distance: 6.0
+    loop-path-ratio: 0.18   # 闭环路径/对角线
+    pause-ms: 260
+    pause-max-distance: 2.0
+
+image-validation:
+  size: 64
+  min-skin-ratio: 0.12
+  dominant:
+    min-ratio: 0.18
+    max-ratio: 0.82
+    min-box-ratio: 0.24
+    large-component-ratio: 0.04
+    max-large-components: 2
+  center:
+    start-ratio: 0.25
+    end-ratio: 0.75
+    min-skin-ratio: 0.16
+    min-center-x: 0.22
+    max-center-x: 0.78
+    min-center-y: 0.22
+    max-center-y: 0.80
+
+cp:
+  score:
+    min: 70.0
+    max: 98.0
+    hash-range: 2900        # MBTI 哈希打分空间
+  dimensions:
+    - name: 感情线趋同度
+      offset: 3
+    - name: 智慧线互补性
+      offset: -4
+    - name: 生活节奏契合度
+      offset: -1
+  combos:
+    火-水: 救赎文学组
+    水-火: 救赎文学组
+    风-土: 现实智囊组
+    土-风: 现实智囊组
+    default: 理想主义组
+  feature-score:
+    # 基于双方 PalmFeatureSet 的掌型亲和分（键 = 掌型短名对，如 水-火）
+    火-水: 88
+    水-火: 88
+    风-土: 90
+    土-风: 90
+    火-风: 82
+    风-火: 82
+    土-火: 84
+    火-土: 84
+    土-水: 80
+    水-土: 80
+    水-风: 85
+    风-水: 85
+    default: 78
+    lines-bonus-max: 8.0    # 双方同名线几何相近度加分上限
+    line-bonus:
+      same-length: 2.0
+      same-curvature: 1.0
+      same-continuity: 1.0

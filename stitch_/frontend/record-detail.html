@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>记录回顾</title>
+  <style>
+    body {
+      background: linear-gradient(180deg, #fff8f7, #f5f8ff);
+    }
+  </style>
+</head>
+
+<body class="text-slate-800 min-h-screen pb-20">
+  <main class="max-w-xl mx-auto px-5 py-6 space-y-4">
+    <header class="glass rounded-3xl p-5">
+      <div class="flex items-center justify-between gap-3">
+        <a href="/calendar.html"
+          class="inline-flex items-center gap-1 rounded-full border border-pink-200 bg-white px-3 py-2 text-xs text-pink-700 hover:bg-pink-50 transition-colors"
+          aria-label="返回手相日历">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          返回
+        </a>
+        <h1 class="text-xl font-semibold text-pink-700">当日记录回顾</h1>
+      </div>
+      <p id="dateText" class="mt-2 text-sm text-slate-600">-</p>
+    </header>
+
+    <section class="glass rounded-3xl p-5 space-y-3">
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">生命线气色</p>
+          <p id="energyText" class="text-lg font-semibold">-</p>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">智慧活跃度</p>
+          <p id="wisdomText" class="text-lg font-semibold">-</p>
+        </div>
+        <div class="bg-white rounded-xl p-2">
+          <p class="text-xs text-slate-500">情绪波动</p>
+          <p id="emotionText" class="text-lg font-semibold">-</p>
+        </div>
+      </div>
+
+      <div class="rounded-2xl bg-pink-50 border border-pink-100 p-3">
+        <p class="text-xs text-pink-700">AI 总结</p>
+        <p id="summaryText" class="mt-1 text-sm leading-6"></p>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-100 p-3">
+        <p class="text-xs text-slate-600">当日便签</p>
+        <p id="noteText" class="mt-1 text-sm leading-6 text-slate-700">未填写便签</p>
+      </div>
+
+      <a href="/calendar.html" class="block text-center py-2 rounded-full bg-pink-600 text-white">返回手相日历</a>
+    </section>
+  </main>
+
+  <script type="module" src="/src/pages/record-detail/main.js"></script>
+</body>
+
+</html>

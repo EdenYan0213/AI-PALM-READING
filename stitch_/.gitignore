@@ -8,3 +8,4 @@ backend/data/*.mv.db
 backend/logs/
 backend/target/
 backend/data/photos/
+backend/src/main/resources/static/
