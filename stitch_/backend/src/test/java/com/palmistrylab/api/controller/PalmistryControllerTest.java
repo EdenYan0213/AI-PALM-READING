@@ -81,8 +81,23 @@ class PalmistryControllerTest {
               "http://localhost:9",
               "",
               "test-model",
+              "test-model",
               "test-model"),
-          new ObjectMapper());
+          new ObjectMapper(),
+          new com.palmistrylab.api.service.UserTokenService("test-secret"),
+          new com.palmistrylab.api.service.PerceptionClient(
+              new RestTemplateBuilder(), new ObjectMapper(), ""),
+          new com.palmistrylab.api.service.LoreService());
+    }
+
+    @Bean
+    com.palmistrylab.api.service.UserTokenService userTokenService() {
+      return new com.palmistrylab.api.service.UserTokenService("test-secret");
+    }
+
+    @Bean(name = "analyzeExecutor")
+    java.util.concurrent.Executor analyzeExecutor() {
+      return Runnable::run;
     }
   }
 }

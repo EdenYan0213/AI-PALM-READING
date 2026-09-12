@@ -49,7 +49,26 @@ public final class ApiDtos {
       boolean traceConfirmed,
       String traceFeatureSummary,
       boolean llmUsed,
-      String llmStatus) {
+      String llmStatus,
+      PalmFeatureSet featureSet) {
+  }
+
+  /** 量化层契约（TD §4）：确定性特征集合，前端/CP 引擎唯一事实源。 */
+  public record PalmFeatureSet(
+      String version,
+      String source,
+      String imageHash,
+      PalmShapeFeature palmShape,
+      QualityFeature quality) {
+  }
+
+  public record PalmShapeFeature(String type, Double confidence, ShapeBasis basis) {
+  }
+
+  public record ShapeBasis(Double palmRatio, Double fingerRatio) {
+  }
+
+  public record QualityFeature(Double blur, Double brightness, Boolean retake) {
   }
 
   public record UnlockDeepRequest(@NotBlank String sessionId) {
@@ -130,6 +149,19 @@ public final class ApiDtos {
   public record PalmImageValidationRequest(@NotBlank String imageData) {
   }
 
+  /** 分析进度回调：SSE 端点据此推送真实阶段与生成进度，同步端点使用 NONE 静默实现。 */
+  public interface AnalyzeProgressListener {
+
+    AnalyzeProgressListener NONE = new AnalyzeProgressListener() {
+    };
+
+    default void onStage(String stage, int percent, String message) {
+    }
+
+    default void onGeneratedChars(int chars) {
+    }
+  }
+
   public record PalmImageValidationResponse(
       boolean accepted,
       double confidence,
@@ -198,8 +230,14 @@ public final class ApiDtos {
       String runeColor) {
   }
 
+  public record UserIdentityResponse(
+      String userId,
+      boolean restored) {
+  }
+
   public record UpdateRecordNoteRequest(
       @NotBlank String recordId,
+      @NotBlank String userId,
       @NotEmpty String userNote) {
   }
 

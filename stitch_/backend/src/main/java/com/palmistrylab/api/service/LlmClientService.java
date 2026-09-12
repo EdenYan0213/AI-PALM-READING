@@ -2,6 +2,7 @@ package com.palmistrylab.api.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
@@ -14,12 +15,39 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Service
 public class LlmClientService {
+
+  /**
+   * 带分类的 LLM 调用异常：retryable=false 的确定性失败（4xx，除 408/429）
+   * 不再触发去图重试 / 兜底模型重试，避免把用户请求拖成分钟级。
+   */
+  public static class LlmCallException extends RuntimeException {
+    private final Integer status;
+    private final boolean retryable;
+
+    public LlmCallException(String message, Integer status, boolean retryable, Throwable cause) {
+      super(message, cause);
+      this.status = status;
+      this.retryable = retryable;
+    }
+
+    public Integer getStatus() {
+      return status;
+    }
+
+    public boolean isRetryable() {
+      return retryable;
+    }
+  }
 
   private final RestTemplate restTemplate;
   private final ObjectMapper objectMapper;
@@ -27,6 +55,7 @@ public class LlmClientService {
   private final String baseUrl;
   private final String apiKey;
   private final String model;
+  private final String visionModel;
   private final String fallbackModel;
 
   public LlmClientService(RestTemplateBuilder restTemplateBuilder,
@@ -35,16 +64,47 @@ public class LlmClientService {
       @Value("${llm.base-url}") String baseUrl,
       @Value("${llm.api-key:}") String apiKey,
       @Value("${llm.model}") String model,
+      @Value("${llm.vision-model:}") String visionModel,
       @Value("${llm.fallback-model:ZhipuAI/GLM-5.1}") String fallbackModel) {
+    this(restTemplateBuilder, objectMapper, enabled, baseUrl, apiKey, model, visionModel, fallbackModel,
+        Duration.ofSeconds(5), Duration.ofSeconds(30));
+  }
+
+  @Autowired
+  public LlmClientService(RestTemplateBuilder restTemplateBuilder,
+      ObjectMapper objectMapper,
+      @Value("${llm.enabled:false}") boolean enabled,
+      @Value("${llm.base-url}") String baseUrl,
+      @Value("${llm.api-key:}") String apiKey,
+      @Value("${llm.model}") String model,
+      @Value("${llm.vision-model:}") String visionModel,
+      @Value("${llm.fallback-model:ZhipuAI/GLM-5.1}") String fallbackModel,
+      @Value("${llm.connect-timeout-seconds:5}") long connectTimeoutSeconds,
+      @Value("${llm.read-timeout-seconds:30}") long readTimeoutSeconds) {
+    this(restTemplateBuilder, objectMapper, enabled, baseUrl, apiKey, model, visionModel, fallbackModel,
+        Duration.ofSeconds(connectTimeoutSeconds), Duration.ofSeconds(readTimeoutSeconds));
+  }
+
+  public LlmClientService(RestTemplateBuilder restTemplateBuilder,
+      ObjectMapper objectMapper,
+      boolean enabled,
+      String baseUrl,
+      String apiKey,
+      String model,
+      String visionModel,
+      String fallbackModel,
+      Duration connectTimeout,
+      Duration readTimeout) {
     this.restTemplate = restTemplateBuilder
-        .setConnectTimeout(Duration.ofSeconds(10))
-        .setReadTimeout(Duration.ofSeconds(90))
+        .setConnectTimeout(connectTimeout)
+        .setReadTimeout(readTimeout)
         .build();
     this.objectMapper = objectMapper;
     this.enabled = enabled;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
     this.model = model;
+    this.visionModel = visionModel;
     this.fallbackModel = fallbackModel;
   }
 
@@ -56,35 +116,152 @@ public class LlmClientService {
     return chat(systemPrompt, userPrompt, null);
   }
 
+  /**
+   * 生成类调用。重试链（收紧后）：
+   * 主模型(可含图) → [仅可重试错误] 同模型去图 → [仅可重试错误] 兜底模型；
+   * 视觉模型失败时整体退回文本主模型链路。4xx（除 408/429）一律立即失败。
+   */
   public String chat(String systemPrompt, String userPrompt, String imageData) {
-    if (!isAvailable()) {
-      throw new IllegalStateException("LLM is not enabled or API key is missing");
-    }
+    assertAvailable();
+
+    // 视觉/文本模型拆分（TD §13.1）：带图请求优先走专用视觉模型。
+    boolean hasImage = imageData != null && !imageData.isBlank();
+    String primaryModel = hasImage && hasText(visionModel) ? visionModel : model;
 
     Exception primaryError;
     try {
-      return doChat(model, systemPrompt, userPrompt, imageData);
+      return doChat(primaryModel, systemPrompt, userPrompt, imageData, false);
     } catch (Exception firstError) {
       primaryError = firstError;
     }
 
-    if (fallbackModel != null && !fallbackModel.isBlank() && !fallbackModel.equals(model)) {
+    if (!primaryModel.equals(model)) {
+      // 视觉模型失败时退回文本主模型（其内部还会做兜底模型重试）。
       try {
-        return doChat(fallbackModel, systemPrompt, userPrompt, imageData);
-      } catch (Exception fallbackError) {
+        return chat(systemPrompt, userPrompt, null);
+      } catch (Exception secondaryError) {
         throw new IllegalStateException(
-            "Primary model failed(" + model + "): " + primaryError.getMessage()
-                + " ; fallback model failed(" + fallbackModel + "): " + fallbackError.getMessage(),
-            fallbackError);
+            "Vision model failed(" + primaryModel + "): " + summarizeException(primaryError)
+                + " ; text model also failed: " + summarizeException(secondaryError),
+            secondaryError);
       }
     }
 
-    throw new IllegalStateException("Primary model failed(" + model + "): " + primaryError.getMessage(), primaryError);
+    if (hasText(fallbackModel) && !fallbackModel.equals(model) && isWorthFallback(primaryError)) {
+      try {
+        return doChat(fallbackModel, systemPrompt, userPrompt, imageData, false);
+      } catch (Exception fallbackError) {
+        throw new IllegalStateException(
+            "Primary model failed(" + primaryModel + "): " + summarizeException(primaryError)
+                + " ; fallback model failed(" + fallbackModel + "): " + summarizeException(fallbackError),
+            fallbackError);
+      }
+    }
+    throw new IllegalStateException("Primary model failed(" + primaryModel + "): " + summarizeException(primaryError), primaryError);
   }
 
-  private String doChat(String modelName, String systemPrompt, String userPrompt, String imageData) {
-    Exception firstError;
+  /**
+   * 图片校验类调用：图片是判断依据，失败后去图重试毫无意义，
+   * 因此只允许换模型重试，且不做任何去图降级。
+   */
+  public String chatForValidation(String systemPrompt, String userPrompt, String imageData) {
+    assertAvailable();
 
+    boolean hasImage = imageData != null && !imageData.isBlank();
+    String primaryModel = hasImage && hasText(visionModel) ? visionModel : model;
+
+    Exception primaryError;
+    try {
+      return doChat(primaryModel, systemPrompt, userPrompt, imageData, true);
+    } catch (Exception firstError) {
+      primaryError = firstError;
+    }
+
+    String secondaryModel = primaryModel.equals(model) ? fallbackModel : model;
+    if (hasText(secondaryModel) && !secondaryModel.equals(primaryModel) && isWorthFallback(primaryError)) {
+      try {
+        return doChat(secondaryModel, systemPrompt, userPrompt, imageData, true);
+      } catch (Exception secondaryError) {
+        throw new IllegalStateException(
+            "Validation call failed for " + primaryModel + " and " + secondaryModel + ": "
+                + summarizeException(primaryError) + " | " + summarizeException(secondaryError),
+            secondaryError);
+      }
+    }
+    throw new IllegalStateException("Validation call failed(" + primaryModel + "): " + summarizeException(primaryError), primaryError);
+  }
+
+  /**
+   * 流式生成（OpenAI 兼容 SSE）：边生成边通过 onDelta 回调增量文本，
+   * 供上层把真实进度推给前端。单次尝试不内部重试，失败由调用方回退到 chat()。
+   */
+  public String chatStream(String systemPrompt, String userPrompt, String imageData, Consumer<String> onDelta) {
+    assertAvailable();
+
+    boolean hasImage = imageData != null && !imageData.isBlank();
+    String primaryModel = hasImage && hasText(visionModel) ? visionModel : model;
+    String promptText = "[Instruction]\n" + systemPrompt + "\n\n[Task]\n" + userPrompt;
+    Object content = hasImage
+        ? List.of(
+            Map.of("type", "text", "text", promptText),
+            Map.of("type", "image_url", "image_url", Map.of("url", imageData)))
+        : promptText;
+
+    Map<String, Object> body = Map.of(
+        "model", primaryModel,
+        "stream", true,
+        "temperature", 0.7,
+        "messages", List.of(Map.of("role", "user", "content", content)));
+
+    StringBuilder full = new StringBuilder();
+    restTemplate.execute(
+        baseUrl + "/chat/completions",
+        HttpMethod.POST,
+        request -> {
+          HttpHeaders headers = request.getHeaders();
+          headers.setContentType(MediaType.APPLICATION_JSON);
+          headers.setBearerAuth(apiKey);
+          objectMapper.writeValue(request.getBody(), body);
+        },
+        response -> {
+          try (BufferedReader reader = new BufferedReader(
+              new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+              if (!line.startsWith("data:")) {
+                continue;
+              }
+              String data = line.substring(5).trim();
+              if ("[DONE]".equals(data)) {
+                break;
+              }
+              JsonNode node = objectMapper.readTree(data);
+              JsonNode delta = node.path("choices").path(0).path("delta").path("content");
+              if (delta.isTextual() && !delta.asText().isEmpty()) {
+                String piece = delta.asText();
+                full.append(piece);
+                if (onDelta != null) {
+                  onDelta.accept(piece);
+                }
+              }
+            }
+          }
+          return null;
+        });
+
+    if (full.isEmpty()) {
+      throw new IllegalStateException("Empty streamed LLM response");
+    }
+    return full.toString();
+  }
+
+  private void assertAvailable() {
+    if (!isAvailable()) {
+      throw new IllegalStateException("LLM is not enabled or API key is missing");
+    }
+  }
+
+  private String doChat(String modelName, String systemPrompt, String userPrompt, String imageData, boolean imageEssential) {
     String promptText = "[Instruction]\n" + systemPrompt + "\n\n[Task]\n" + userPrompt;
     Object content = (imageData == null || imageData.isBlank())
         ? promptText
@@ -101,42 +278,25 @@ public class LlmClientService {
 
     try {
       return executeChat(body);
-    } catch (Exception e) {
-      firstError = e;
-    }
-
-    if (imageData != null && !imageData.isBlank()) {
-      Map<String, Object> textOnlyBody = Map.of(
-          "model", modelName,
-          "stream", false,
-          "temperature", 0.5,
-          "messages", List.of(
-              Map.of("role", "user", "content", promptText)));
-      try {
-        return executeChat(textOnlyBody);
-      } catch (Exception ignored) {
-        // Continue to lite mode.
+    } catch (LlmCallException e) {
+      // 确定性失败（鉴权/参数错误等）立即失败；去图重试只针对可重试错误。
+      if (imageData == null || imageData.isBlank() || imageEssential || !e.isRetryable()) {
+        throw e;
       }
     }
 
-    try {
-      return doChatLite(modelName, userPrompt);
-    } catch (Exception liteError) {
-      throw new IllegalStateException(
-          "LLM call failed in standard/text-only/lite modes for model " + modelName + ": "
-              + summarizeException(firstError) + " | " + summarizeException(liteError),
-          liteError);
-    }
-  }
-
-  private String doChatLite(String modelName, String userPrompt) {
-    Map<String, Object> body = Map.of(
+    // 去图重试：仅一次（图片负载导致的传输失败时有效）。
+    Map<String, Object> textOnlyBody = Map.of(
         "model", modelName,
         "stream", false,
-        "temperature", 0.3,
+        "temperature", 0.5,
         "messages", List.of(
-            Map.of("role", "user", "content", userPrompt)));
-    return executeChat(body);
+            Map.of("role", "user", "content", promptText)));
+    try {
+      return executeChat(textOnlyBody);
+    } catch (LlmCallException retryError) {
+      throw retryError;
+    }
   }
 
   private String executeChat(Map<String, Object> body) {
@@ -153,14 +313,16 @@ public class LlmClientService {
           requestEntity,
           String.class);
     } catch (HttpStatusCodeException e) {
-      throw new IllegalStateException("HTTP " + e.getStatusCode().value() + ": " + shorten(e.getResponseBodyAsString()), e);
+      int status = e.getStatusCode().value();
+      boolean retryable = status == 408 || status == 429 || status >= 500;
+      throw new LlmCallException("HTTP " + status + ": " + shorten(e.getResponseBodyAsString()), status, retryable, e);
     } catch (ResourceAccessException e) {
-      throw new IllegalStateException("Network/timeout: " + e.getMessage(), e);
+      throw new LlmCallException("Network/timeout: " + e.getMessage(), null, true, e);
     }
 
     String payloadText = response.getBody();
     if (payloadText == null || payloadText.isBlank()) {
-      throw new IllegalStateException("Empty LLM response");
+      throw new LlmCallException("Empty LLM response", null, true, null);
     }
 
     try {
@@ -176,7 +338,7 @@ public class LlmClientService {
           if (!outputText.isMissingNode() && !outputText.asText().isBlank()) {
             return outputText.asText();
           }
-          throw new IllegalStateException("LLM response has no choices");
+          throw new LlmCallException("LLM response has no choices", null, true, null);
         }
       }
 
@@ -199,14 +361,21 @@ public class LlmClientService {
         return text.asText();
       }
 
-      throw new IllegalStateException("LLM choice has no content");
+      throw new LlmCallException("LLM choice has no content", null, true, null);
+    } catch (LlmCallException e) {
+      throw e;
     } catch (Exception e) {
       String preview = payloadText.replaceAll("\\s+", " ");
       if (preview.length() > 180) {
         preview = preview.substring(0, 180) + "...";
       }
-      throw new IllegalStateException("Failed to parse LLM response: " + preview, e);
+      throw new LlmCallException("Failed to parse LLM response: " + preview, null, true, e);
     }
+  }
+
+  private boolean isWorthFallback(Throwable error) {
+    // 4xx 确定性失败换模型也无济于事（鉴权、参数错误对所有模型一致），立即失败。
+    return !(error instanceof LlmCallException llmError) || llmError.isRetryable();
   }
 
   private String extractContentValue(JsonNode contentNode) {
@@ -259,5 +428,9 @@ public class LlmClientService {
       return preview.substring(0, 260) + "...";
     }
     return preview;
+  }
+
+  private boolean hasText(String value) {
+    return value != null && !value.isBlank();
   }
 }

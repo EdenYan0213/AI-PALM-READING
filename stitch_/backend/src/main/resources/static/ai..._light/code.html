@@ -6,14 +6,14 @@
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
   <title>Palmistry AI - 正在分析</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap"
+  <script src="../vendor/tailwind-play.js"></script>
+  <link href="https://fonts.loli.net/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap"
     rel="stylesheet" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    href="https://fonts.loli.net/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
     rel="stylesheet" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    href="https://fonts.loli.net/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
     rel="stylesheet" />
   <style>
     body {
@@ -142,9 +142,9 @@
   <header
     class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 rounded-full mt-4 mx-6 border border-white/60 bg-white/40 backdrop-blur-xl shadow-[0_0_15px_rgba(250,218,221,0.3)]">
     <a href="../light_2/code.html"
-      class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
+      class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
       aria-label="返回拍照页">
-      <span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+      <span class="material-symbols-outlined text-[18px]" data-icon="arrow_back">arrow_back</span>
     </a>
     <div class="flex items-center gap-2">
       <span class="material-symbols-outlined text-pink-400" data-icon="auto_awesome">auto_awesome</span>
@@ -209,6 +209,21 @@
       </div>
     </div>
   </main>
+  <!-- Error / Retry Panel (hidden by default) -->
+  <section id="errorPanel"
+    class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center px-8 bg-white/70 backdrop-blur-md">
+    <div class="w-full max-w-sm rounded-3xl border border-pink-100 bg-white/90 p-6 text-center shadow-lg">
+      <span class="material-symbols-outlined text-5xl text-pink-400">cloud_off</span>
+      <h2 class="mt-3 text-lg font-semibold text-pink-700">分析没有成功</h2>
+      <p id="errorReason" class="mt-2 text-sm leading-6 text-on-surface-variant">网络或服务暂时不可用，请重试。</p>
+      <div class="mt-5 flex flex-col gap-3">
+        <button id="retryButton" type="button"
+          class="w-full py-3 rounded-full bg-pink-600 text-white font-semibold active:scale-95 transition-transform">再试一次</button>
+        <a href="../light_2/code.html"
+          class="w-full py-3 rounded-full border border-pink-200 text-pink-700 font-semibold text-center">重新拍照</a>
+      </div>
+    </div>
+  </section>
   <!-- Bottom Navigation Anchor (Suppressed for focused analysis task as per guidelines) -->
   <!-- Navigation Shell hidden to prioritize content during transactional analysis process -->
   <!-- Mystic Decorative Corner -->
@@ -220,6 +235,9 @@
   </div>
   <script>
       (function () {
+        const API_BASE = window.location.protocol === 'file:'
+          ? 'http://localhost:8080/api/v1'
+          : window.location.origin + '/api/v1';
         const CAPTURE_KEY = "palmistry.capturedImage";
         const steps = [
           "正在扫描掌型编码...",
@@ -235,8 +253,13 @@
         const statusCurrent = document.getElementById("statusCurrent");
         const statusNext = document.getElementById("statusNext");
         const scanPreviewImage = document.getElementById("scanPreviewImage");
+        const errorPanel = document.getElementById("errorPanel");
+        const errorReason = document.getElementById("errorReason");
+        const retryButton = document.getElementById("retryButton");
 
         let progress = 12;
+        let finished = false;
+        let tick = null;
         const imageData = localStorage.getItem(CAPTURE_KEY) || "";
         if (!imageData) {
           statusCurrent.textContent = "请先拍照或上传手掌照片";
@@ -255,26 +278,68 @@
           statusNext.textContent = steps[Math.min(steps.length - 1, index + 1)];
         };
 
-        const tick = setInterval(() => {
-          progress += Math.random() * 4 + 1.8;
-          if (progress >= 100) {
-            progress = 100;
-          }
-
+        const renderProgress = () => {
           const value = Math.round(progress);
           progressPercent.textContent = value + "%";
           progressFill.style.width = value + "%";
           paintStatus();
+        };
 
-          if (value >= 100) {
-            clearInterval(tick);
-            setTimeout(() => {
-              window.location.href = "../trace_confirm/code.html?from=analysis";
-            }, 420);
+        const finishAndContinue = () => {
+          if (finished) {
+            return;
           }
-        }, 140);
+          finished = true;
+          if (tick) {
+            clearInterval(tick);
+          }
+          progress = 100;
+          renderProgress();
+          setTimeout(() => {
+            window.location.href = "../trace_confirm/code.html?from=analysis";
+          }, 420);
+        };
+
+        const showError = (message) => {
+          if (finished) {
+            return;
+          }
+          if (tick) {
+            clearInterval(tick);
+          }
+          errorReason.textContent = message;
+          errorPanel.classList.remove("hidden");
+        };
+
+        // 进度条约 4 秒推进到 100% 后自动进入描纹页（PRD：分析页 3-5 秒内完成并跳转）。
+        const startProgressTick = () => {
+          if (tick) {
+            clearInterval(tick);
+          }
+          tick = setInterval(() => {
+            if (finished) {
+              return;
+            }
+            progress += Math.random() * 3 + 1.2;
+            if (progress >= 100) {
+              finishAndContinue();
+              return;
+            }
+            renderProgress();
+          }, 140);
+        };
+
+        // 校验已并入 /palm/analyze（同一次视觉模型调用），本页回归 PRD 的 3-5 秒纯动效，
+        // 不再等待服务端往返；真正的手掌校验结果由 trace_confirm 的流式接口给出。
+        const runIntroAnimation = () => {
+          errorPanel.classList.add("hidden");
+          startProgressTick();
+        };
+
+        retryButton.addEventListener("click", runIntroAnimation);
 
         paintStatus();
+        runIntroAnimation();
       })();
   </script>
 </body>

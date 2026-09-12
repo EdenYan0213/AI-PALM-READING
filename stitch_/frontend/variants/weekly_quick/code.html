@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>本周手相记录</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     body {
       background:
@@ -172,9 +172,23 @@
       recordDateInput.min = toDateText(minDate);
       recordDateInput.value = toDateText(today);
 
-      if (!localStorage.getItem(USER_KEY)) {
-        localStorage.setItem(USER_KEY, 'guest-demo');
-      }
+      // 向服务端签发/续用身份，替代旧的 guest-demo 写死值。
+      const ensureUserId = async () => {
+        let uid = localStorage.getItem(USER_KEY) || '';
+        try {
+          const identityResponse = await fetch(API_BASE + '/user/identity' + (uid ? '?previous=' + encodeURIComponent(uid) : ''));
+          if (identityResponse.ok) {
+            const identity = await identityResponse.json();
+            if (identity && identity.userId) {
+              uid = identity.userId;
+              localStorage.setItem(USER_KEY, uid);
+            }
+          }
+        } catch (error) {
+          // 离线时沿用本地身份。
+        }
+        return uid;
+      };
 
       if (imageData) {
         previewImage.src = imageData;
@@ -248,7 +262,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              userId: localStorage.getItem(USER_KEY),
+              userId: await ensureUserId(),
               recordMode: 'quick',
               imageData,
               recordDate: recordDateInput.value
@@ -283,6 +297,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recordId: String(currentRecordId),
+              userId: await ensureUserId(),
               userNote: String(noteInput.value || '').trim() || ' '
             })
           });

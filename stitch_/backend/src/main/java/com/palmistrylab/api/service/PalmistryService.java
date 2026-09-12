@@ -11,6 +11,8 @@ import com.palmistrylab.api.repository.AppEventRepository;
 import com.palmistrylab.api.repository.MonthlyReportRepository;
 import com.palmistrylab.api.repository.PalmRecordRepository;
 import com.palmistrylab.api.repository.SessionRecordRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -24,15 +26,21 @@ import java.time.format.DateTimeFormatter;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
+import java.security.MessageDigest;
 
 @Service
 public class PalmistryService {
@@ -41,8 +49,45 @@ public class PalmistryService {
   private static final String WECHAT_ID = "CyberPalm-Master";
   private static final Pattern SENTENCE_SPLIT = Pattern.compile("[。！？!?\\n]+\\s*");
   private static final DateTimeFormatter YEAR_MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
+  /**
+   * 合规出口审查（TD §13.2）：疾病/死亡/生育预测与具体财务指引绝对禁止。
+   * 命中即弃用本次 LLM 文案，回退确定性模板。
+   */
+  private static final Pattern BANNED_CLAIM_PATTERN = Pattern.compile(
+      "癌症|绝症|肿瘤|白血病|晚期|死亡|死期|寿元|阳寿|短命|活不过|血光之灾|牢狱之灾|难产|克子|克夫"
+          + "|暴富|发财|破财|炒股|股票|基金|期货|加密货币|彩票|赌博|加仓|减仓|买入|卖出|翻倍|稳赚");
+  private static final String CONTENT_GUARDRAIL =
+      "内容红线（最高优先级）：严禁输出疾病、死亡、寿元、生育相关预测，"
+          + "严禁给出股票/基金/加密货币等任何具体财务投资建议；只做性格倾向与娱乐化解读。";
+  private static final int RESPONSE_CACHE_MAX = 500;
+  private static final int SESSION_CACHE_MAX = 20_000;
+  /** 图片 base64 体积上限（字符数，约 9MB 原图），防止超大 payload 拖垮上传与 LLM 调用。 */
+  private static final int MAX_IMAGE_CHARS = 12_000_000;
 
-  private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
+  /** 会话表用 LRU 淘汰，避免长期运行后无限增长。 */
+  private final Map<String, SessionState> sessions =
+      Collections.synchronizedMap(new LinkedHashMap<>(1024, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, SessionState> eldest) {
+          return size() > SESSION_CACHE_MAX;
+        }
+      });
+  /** 图哈希 → 分析结果缓存（TD §13.1：同图缓存命中即一致）。V0.2 迁移到 DB。 */
+  private final Map<String, ApiDtos.PalmAnalyzeResponse> responseCache =
+      Collections.synchronizedMap(new LinkedHashMap<>(128, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, ApiDtos.PalmAnalyzeResponse> eldest) {
+          return size() > RESPONSE_CACHE_MAX;
+        }
+      });
+  /** 图哈希 → 手掌校验结论缓存：同一张图不再重复支付一次 LLM 校验调用。 */
+  private final Map<String, ApiDtos.PalmImageValidationResponse> validationCache =
+      Collections.synchronizedMap(new LinkedHashMap<>(128, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, ApiDtos.PalmImageValidationResponse> eldest) {
+          return size() > RESPONSE_CACHE_MAX;
+        }
+      });
 
   private final SessionRecordRepository sessionRecordRepository;
   private final AppEventRepository appEventRepository;
@@ -50,6 +95,11 @@ public class PalmistryService {
   private final MonthlyReportRepository monthlyReportRepository;
   private final LlmClientService llmClientService;
   private final ObjectMapper objectMapper;
+  private final UserTokenService userTokenService;
+  private final PerceptionClient perceptionClient;
+  private final LoreService loreService;
+  private final Executor eventExecutor;
+  private final PhotoStorageService photoStorageService;
 
   public PalmistryService(
       SessionRecordRepository sessionRecordRepository,
@@ -57,20 +107,122 @@ public class PalmistryService {
       PalmRecordRepository palmRecordRepository,
       MonthlyReportRepository monthlyReportRepository,
       LlmClientService llmClientService,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      UserTokenService userTokenService,
+      PerceptionClient perceptionClient,
+      LoreService loreService) {
+    this(sessionRecordRepository, appEventRepository, palmRecordRepository, monthlyReportRepository,
+        llmClientService, objectMapper, userTokenService, perceptionClient, loreService, Runnable::run, null);
+  }
+
+  @Autowired
+  public PalmistryService(
+      SessionRecordRepository sessionRecordRepository,
+      AppEventRepository appEventRepository,
+      PalmRecordRepository palmRecordRepository,
+      MonthlyReportRepository monthlyReportRepository,
+      LlmClientService llmClientService,
+      ObjectMapper objectMapper,
+      UserTokenService userTokenService,
+      PerceptionClient perceptionClient,
+      LoreService loreService,
+      @Qualifier("eventExecutor") Executor eventExecutor,
+      PhotoStorageService photoStorageService) {
     this.sessionRecordRepository = sessionRecordRepository;
     this.appEventRepository = appEventRepository;
     this.palmRecordRepository = palmRecordRepository;
     this.monthlyReportRepository = monthlyReportRepository;
     this.llmClientService = llmClientService;
     this.objectMapper = objectMapper;
+    this.userTokenService = userTokenService;
+    this.perceptionClient = perceptionClient;
+    this.loreService = loreService;
+    this.eventExecutor = eventExecutor;
+    this.photoStorageService = photoStorageService;
+  }
+
+  /** 记录模块统一入口校验: 拒绝伪造或未知来源的 userId。 */
+  private String requireValidUserId(String userId) {
+    if (!userTokenService.verifyUserId(userId)) {
+      throw new IllegalArgumentException("用户身份无效，请重新获取身份后使用");
+    }
+    return userId;
+  }
+
+  /** 服务端体积护栏：客户端压缩失效或被绕过时，拒绝超大 base64 图片。 */
+  private void requireReasonableImage(String imageData) {
+    if (imageData != null && imageData.length() > MAX_IMAGE_CHARS) {
+      throw new IllegalArgumentException("图片过大，请压缩后重新上传");
+    }
+  }
+
+  /** 图片内容 SHA-256，作为一致性缓存键；空图返回 null（不缓存）。 */
+  private String sha256Hex(String imageData) {
+    if (imageData == null || imageData.isBlank()) {
+      return null;
+    }
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      byte[] hash = digest.digest(imageData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return "sha256:" + java.util.HexFormat.of().formatHex(hash);
+    } catch (Exception ex) {
+      return null;
+    }
+  }
+
+  /** 违禁内容审查：任一文本命中红线即返回 true。 */
+  private boolean containsBannedClaims(String... texts) {
+    if (texts == null) {
+      return false;
+    }
+    for (String text : texts) {
+      if (text != null && BANNED_CLAIM_PATTERN.matcher(text).find()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private String[] overviewTexts(LlmPalmOverview overview) {
+    String[] texts = new String[1 + overview.freeOverview().size()];
+    texts[0] = overview.teaser();
+    for (int i = 0; i < overview.freeOverview().size(); i++) {
+      texts[i + 1] = overview.freeOverview().get(i).shortInterpretation();
+    }
+    return texts;
   }
 
   public ApiDtos.PalmAnalyzeResponse analyzePalm(ApiDtos.AnalyzePalmRequest request) {
-    String sessionId = "PALM-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-    String handType = pickHandType(sessionId);
-    List<String> tags = pickPersonalityTags(handType);
+    return analyzePalm(request, ApiDtos.AnalyzeProgressListener.NONE);
+  }
+
+  public ApiDtos.PalmAnalyzeResponse analyzePalm(
+      ApiDtos.AnalyzePalmRequest request, ApiDtos.AnalyzeProgressListener listener) {
+    requireReasonableImage(request.imageData());
     String imageData = request.imageData();
+    String imageHash = sha256Hex(imageData);
+    if (imageHash != null) {
+      ApiDtos.PalmAnalyzeResponse cached = responseCache.get(imageHash);
+      if (cached != null) {
+        trackEventInternal("analyze_cache_hit", cached.sessionId(), request.source());
+        return cached;
+      }
+      // 同一张图此前已被判定为非手掌：直接拒绝，不再重复支付一次 LLM 调用。
+      ApiDtos.PalmImageValidationResponse prior = validationCache.get(imageHash);
+      if (prior != null && !prior.accepted() && "ai".equals(prior.source())) {
+        throw new ImageRejectedException(prior.reason());
+      }
+    }
+
+    String sessionId = "PALM-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    listener.onStage("perception", 15, "正在扫描掌型编码...");
+    // 手型判定（TD §13.1）：优先感知边车的掌型几何；无边车时用 imageHash 确定性兜底，
+    // 保证同一张图在任何实例上都得到同一手型（而非 sessionId 随机）。
+    PerceptionClient.PerceptionResult perception = perceptionClient.detect(imageData);
+    String handType = (perception != null && perception.detected() && perception.suggestedPalmShape() != null)
+        ? perception.suggestedPalmShape()
+        : pickHandType(imageHash != null ? imageHash : sessionId);
+    List<String> tags = pickPersonalityTags(handType);
     String recordMode = normalizeMode(request.recordMode(), "standard");
 
     List<ApiDtos.PalmLineSummary> freeOverview = List.of(
@@ -78,7 +230,7 @@ public class PalmistryService {
         new ApiDtos.PalmLineSummary("智慧线", "平直+末端分叉", "你的思考结构是先理性拆解再创意延展，适合做需要框架与表达并重的工作，决策时通常能兼顾效率和质量。"),
         new ApiDtos.PalmLineSummary("生命线", "中深+环抱鱼际", "你的恢复节律较好，面对阶段性高压时抗波动能力不错，但仍要避免连续透支，规律作息会显著放大状态上限。"));
 
-    String rareMark = pickRareMark(sessionId);
+    String rareMark = pickRareMark(imageHash != null ? imageHash : sessionId);
     String teaser = "检测到稀有印记「" + rareMark + "」，完整解析可在报告页查询";
     TracePromptBundle tracePromptBundle = buildTracePromptBundle(request.traces());
     boolean traceConfirmed = tracePromptBundle.confirmed();
@@ -95,13 +247,28 @@ public class PalmistryService {
     boolean llmUsed = false;
     String llmStatus = "fallback_default";
 
+    listener.onStage("generate", 45, "正在生成专属解读...");
     LlmPalmOverviewResult llmResult = generatePalmOverviewWithLlm(
         handType,
         tags,
         rareMark,
         imageData,
         recordMode,
-        tracePromptBundle.promptBlock());
+        tracePromptBundle.promptBlock(),
+        listener);
+    if (llmResult.rejectReason() != null) {
+      // 模型判定不是手掌：缓存校验结论并拒绝，前端引导重新拍照。
+      if (imageHash != null) {
+        validationCache.put(imageHash, new ApiDtos.PalmImageValidationResponse(
+            false, 0.99, llmResult.rejectReason(), "ai"));
+      }
+      throw new ImageRejectedException(llmResult.rejectReason());
+    }
+    if (imageHash != null && llmResult.used()) {
+      // 分析时模型已确认是手掌：写入校验缓存，validate-image 端点对同图直接复用。
+      validationCache.put(imageHash, new ApiDtos.PalmImageValidationResponse(
+          true, 0.9, "识别为手掌图片", "ai"));
+    }
     llmUsed = llmResult.used();
     llmStatus = llmResult.status();
     LlmPalmOverview llmPalmOverview = llmResult.overview();
@@ -117,12 +284,14 @@ public class PalmistryService {
       }
     }
 
+    listener.onStage("finalize", 90, "正在整理你的专属报告...");
     Instant now = Instant.now();
     sessions.put(sessionId, new SessionState(sessionId, handType, rareMark, now));
     sessionRecordRepository.save(new SessionRecordEntity(sessionId, "SINGLE", handType, rareMark, now));
     trackEventInternal("single_analyze", sessionId, request.source());
 
-    return new ApiDtos.PalmAnalyzeResponse(
+    ApiDtos.PalmFeatureSet featureSet = buildFeatureSet(imageHash, perception, handType);
+    ApiDtos.PalmAnalyzeResponse response = new ApiDtos.PalmAnalyzeResponse(
         sessionId,
         handType,
         tags,
@@ -133,7 +302,27 @@ public class PalmistryService {
           traceConfirmed,
           traceFeatureSummary,
         llmUsed,
-        llmStatus);
+        llmStatus,
+        featureSet);
+    if (imageHash != null) {
+      responseCache.put(imageHash, response);
+    }
+    return response;
+  }
+
+  /** 构建 PalmFeatureSet 契约（TD §4）：感知边车给出几何依据，降级时标注 heuristic_hash。 */
+  private ApiDtos.PalmFeatureSet buildFeatureSet(
+      String imageHash, PerceptionClient.PerceptionResult perception, String handType) {
+    boolean fromPerception = perception != null && perception.detected();
+    ApiDtos.ShapeBasis basis = fromPerception
+        ? new ApiDtos.ShapeBasis(perception.palmRatio(), perception.fingerRatio())
+        : null;
+    return new ApiDtos.PalmFeatureSet(
+        "1.0",
+        fromPerception ? "perception_sidecar" : "heuristic_hash",
+        imageHash,
+        new ApiDtos.PalmShapeFeature(handType, fromPerception ? 0.9 : null, basis),
+        new ApiDtos.QualityFeature(null, null, fromPerception && perception.retake()));
   }
 
   public ApiDtos.UnlockDeepResponse unlockDeep(String sessionId) {
@@ -154,7 +343,8 @@ public class PalmistryService {
         "把高强度任务集中在上午，晚间保留1小时低负荷收尾和恢复拉伸。"));
 
     List<ApiDtos.DeepSection> llmSections = generateSingleDeepWithLlm(session);
-    if (llmSections != null && llmSections.size() >= 2) {
+    if (llmSections != null && llmSections.size() >= 2 && !containsBannedClaims(
+        llmSections.stream().flatMap(s -> java.util.stream.Stream.of(s.title(), s.detail(), s.cyberTip())).toArray(String[]::new))) {
       sections = llmSections;
     }
 
@@ -188,7 +378,8 @@ public class PalmistryService {
     String tip = "相处 Tips：当逻辑线遇上感性分叉时，先共识目标，再讨论路径。";
 
     LlmCpNarrative llmCpNarrative = generateCpNarrativeWithLlm(request, combo, score);
-    if (llmCpNarrative != null) {
+    if (llmCpNarrative != null && !containsBannedClaims(
+        llmCpNarrative.comboName(), llmCpNarrative.interpretation(), llmCpNarrative.tip())) {
       if (llmCpNarrative.comboName() != null && !llmCpNarrative.comboName().isBlank()) {
         combo = llmCpNarrative.comboName();
       }
@@ -261,24 +452,26 @@ public class PalmistryService {
   }
 
   public ApiDtos.WeeklyRecordResponse submitWeeklyRecord(ApiDtos.WeeklyRecordRequest request) {
+    String userId = requireValidUserId(request.userId());
+    requireReasonableImage(request.imageData());
     LocalDate recordDate = parseRecordDate(request.recordDate());
     String mode = normalizeMode(request.recordMode(), "quick");
     String tracesJson = serializeTraces(request.traces());
 
-    int energyLevel = buildScore(request.userId(), recordDate.toString(), "energy");
-    int wisdomActive = buildScore(request.userId(), recordDate.toString(), "wisdom");
-    int emotionWave = buildScore(request.userId(), recordDate.toString(), "emotion");
+    int energyLevel = buildScore(userId, recordDate.toString(), "energy");
+    int wisdomActive = buildScore(userId, recordDate.toString(), "wisdom");
+    int emotionWave = buildScore(userId, recordDate.toString(), "emotion");
 
-    Optional<PalmRecordEntity> lastRecord = palmRecordRepository
-        .findFirstByUserIdAndRecordDateLessThanOrderByRecordDateDescCreatedAtDesc(request.userId(), recordDate);
+    Optional<PalmRecordRepository.EnergySnapshot> lastRecord = palmRecordRepository
+        .findFirstByUserIdAndRecordDateLessThanOrderByRecordDateDescCreatedAtDesc(userId, recordDate);
     String compareHint = buildCompareHint(lastRecord.orElse(null), energyLevel, wisdomActive, emotionWave);
     String aiSummary = buildWeeklySummary(mode, energyLevel, wisdomActive, emotionWave, compareHint, request.traces());
 
     PalmRecordEntity saved = palmRecordRepository.save(new PalmRecordEntity(
-        request.userId(),
+        userId,
         "single",
         mode,
-        request.imageData(),
+        photoStorageService == null ? null : photoStorageService.saveDataUrl(request.imageData()),
         tracesJson,
         energyLevel,
         wisdomActive,
@@ -290,14 +483,14 @@ public class PalmistryService {
 
     YearMonth month = YearMonth.from(recordDate);
     long monthCount = palmRecordRepository.countByUserIdAndRecordDateBetween(
-        request.userId(),
+        userId,
         month.atDay(1),
         month.atEndOfMonth());
     trackEventInternal("weekly_record", "REC-" + saved.getId(), mode);
 
     return new ApiDtos.WeeklyRecordResponse(
         String.valueOf(saved.getId()),
-        request.userId(),
+        userId,
         mode,
         recordDate.toString(),
         energyLevel,
@@ -312,17 +505,19 @@ public class PalmistryService {
   }
 
   public ApiDtos.CalendarResponse getCalendar(String userId, String yearMonth) {
+    requireValidUserId(userId);
     YearMonth month = parseYearMonth(yearMonth);
     LocalDate start = month.atDay(1);
     LocalDate end = month.atEndOfMonth();
-    List<PalmRecordEntity> rows = palmRecordRepository.findByUserIdAndRecordDateBetweenOrderByRecordDateAscCreatedAtAsc(
+    List<PalmRecordRepository.RecordSummary> rows =
+        palmRecordRepository.findByUserIdAndRecordDateBetweenOrderByRecordDateAscCreatedAtAsc(
         userId,
         start,
         end);
 
     List<ApiDtos.CalendarDayRecord> records = new ArrayList<>();
     List<ApiDtos.EnergyTrendPoint> trend = new ArrayList<>();
-    for (PalmRecordEntity row : rows) {
+    for (PalmRecordRepository.RecordSummary row : rows) {
       records.add(new ApiDtos.CalendarDayRecord(
           row.getRecordDate().toString(),
           toRuneColor(row.getEnergyLevel()),
@@ -344,8 +539,9 @@ public class PalmistryService {
   }
 
   public ApiDtos.RecordDetailResponse getRecordDetail(String userId, String date) {
+    requireValidUserId(userId);
     LocalDate recordDate = parseRecordDate(date);
-    PalmRecordEntity row = palmRecordRepository
+    PalmRecordRepository.RecordSummary row = palmRecordRepository
         .findFirstByUserIdAndRecordDateOrderByCreatedAtDesc(userId, recordDate)
         .orElseThrow(() -> new IllegalArgumentException("该日期暂无记录: " + recordDate));
     return new ApiDtos.RecordDetailResponse(
@@ -362,6 +558,7 @@ public class PalmistryService {
   }
 
   public ApiDtos.UpdateRecordNoteResponse updateRecordNote(ApiDtos.UpdateRecordNoteRequest request) {
+    requireValidUserId(request.userId());
     long recordId;
     try {
       recordId = Long.parseLong(request.recordId());
@@ -371,23 +568,28 @@ public class PalmistryService {
 
     PalmRecordEntity row = palmRecordRepository.findById(recordId)
         .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + request.recordId()));
+    if (!request.userId().equals(row.getUserId())) {
+      throw new IllegalArgumentException("无权修改他人记录");
+    }
     row.setUserNote(request.userNote());
     palmRecordRepository.save(row);
     return new ApiDtos.UpdateRecordNoteResponse(true, request.recordId(), request.userNote());
   }
 
   public ApiDtos.MonthlyReportResponse getMonthlyReport(String userId, String yearMonthText) {
+    requireValidUserId(userId);
     YearMonth yearMonth = parseYearMonth(yearMonthText);
     LocalDate start = yearMonth.atDay(1);
     LocalDate end = yearMonth.atEndOfMonth();
 
-    List<PalmRecordEntity> rows = palmRecordRepository.findByUserIdAndRecordDateBetweenOrderByRecordDateAscCreatedAtAsc(
+    List<PalmRecordRepository.RecordSummary> rows =
+        palmRecordRepository.findByUserIdAndRecordDateBetweenOrderByRecordDateAscCreatedAtAsc(
         userId,
         start,
         end);
 
     List<ApiDtos.EnergyTrendPoint> trend = new ArrayList<>();
-    for (PalmRecordEntity row : rows) {
+    for (PalmRecordRepository.RecordSummary row : rows) {
       trend.add(new ApiDtos.EnergyTrendPoint(row.getRecordDate().toString(), row.getEnergyLevel()));
     }
 
@@ -451,6 +653,14 @@ public class PalmistryService {
       return new ApiDtos.PalmImageValidationResponse(false, 0.0, "这张图片不是手相，请上传清晰的手掌照片。", "empty");
     }
 
+    String imageHash = sha256Hex(imageData);
+    if (imageHash != null) {
+      ApiDtos.PalmImageValidationResponse cached = validationCache.get(imageHash);
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     if (llmClientService.isAvailable()) {
       try {
         String systemPrompt = "你是手相图片审核模型，只能输出严格 JSON。先判断图片是不是手相图片。";
@@ -459,7 +669,8 @@ public class PalmistryService {
             + "如果不是手相图片，例如多人、动物、物品、风景、脸部、全身照、截图、拼图、卡通图，则 accepted 为 false。"
             + "如果 accepted 为 false，reason 必须直接写成：这张图片不是手相，请上传清晰的手掌照片。"
             + "如果 accepted 为 true，reason 用一句中文简要说明为什么判定为手相图片。";
-        String content = llmClientService.chat(systemPrompt, userPrompt, imageData);
+        // 校验专用通道：图片是判断依据，失败不走去图降级，仅换模型重试一次。
+        String content = llmClientService.chatForValidation(systemPrompt, userPrompt, imageData);
         JsonNode node = parseJsonNode(content);
         boolean accepted = node.path("accepted").asBoolean(
             node.path("isPalm").asBoolean(node.path("valid").asBoolean(false)));
@@ -470,23 +681,57 @@ public class PalmistryService {
         if (!accepted) {
           reason = "这张图片不是手相，请上传清晰的手掌照片。";
         }
-        return new ApiDtos.PalmImageValidationResponse(accepted, confidence, reason, "ai");
+        ApiDtos.PalmImageValidationResponse response = new ApiDtos.PalmImageValidationResponse(accepted, confidence, reason, "ai");
+        if (imageHash != null) {
+          validationCache.put(imageHash, response);
+        }
+        return response;
       } catch (Exception ignored) {
-        return new ApiDtos.PalmImageValidationResponse(false, 0.0, "这张图片不是手相，请上传清晰的手掌照片。", "ai_error");
+        // 校验调用失败不应拒绝用户：退回本地启发式判定。
       }
     }
 
     boolean accepted = validatePalmImageLocally(imageData);
     String reason = accepted ? "通过本地兜底校验" : "这张图片不是手相，请上传清晰的手掌照片。";
-    return new ApiDtos.PalmImageValidationResponse(accepted, accepted ? 0.72 : 0.08, reason, "heuristic");
+    ApiDtos.PalmImageValidationResponse response =
+        new ApiDtos.PalmImageValidationResponse(accepted, accepted ? 0.72 : 0.08, reason, "heuristic");
+    if (imageHash != null) {
+      validationCache.put(imageHash, response);
+    }
+    return response;
   }
 
   private SessionState requireSession(String sessionId) {
     SessionState session = sessions.get(sessionId);
     if (session == null) {
+      session = restoreSessionFromRepository(sessionId);
+    }
+    if (session == null) {
       throw new IllegalArgumentException("会话不存在或已过期: " + sessionId);
     }
     return session;
+  }
+
+  /**
+   * 服务重启或内存缓存被清理后，从数据库恢复会话，
+   * 保证深度解锁与稀有印记查询不因重启失效。
+   */
+  private SessionState restoreSessionFromRepository(String sessionId) {
+    if (sessionId == null || sessionId.isBlank()) {
+      return null;
+    }
+    Optional<SessionRecordEntity> record = sessionRecordRepository.findById(sessionId);
+    if (record.isEmpty()) {
+      return null;
+    }
+    SessionRecordEntity entity = record.get();
+    SessionState restored = new SessionState(
+        entity.getSessionId(),
+        entity.getSubject(),
+        entity.getRareMark() == null ? "凤凰眼" : entity.getRareMark(),
+        entity.getCreatedAt() == null ? Instant.now() : entity.getCreatedAt());
+    sessions.put(sessionId, restored);
+    return restored;
   }
 
   private String pickHandType(String seed) {
@@ -530,8 +775,16 @@ public class PalmistryService {
     return Math.max(70, Math.min(98, value));
   }
 
+  /** 埋点异步落库：不阻塞分析主链路；失败静默丢弃（指标事件可容忍）。 */
   private void trackEventInternal(String eventName, String sessionId, String channel) {
-    appEventRepository.save(new AppEventEntity(eventName, sessionId, channel, Instant.now()));
+    Instant at = Instant.now();
+    eventExecutor.execute(() -> {
+      try {
+        appEventRepository.save(new AppEventEntity(eventName, sessionId, channel, at));
+      } catch (Exception ignored) {
+        // 埋点失败不影响主流程
+      }
+    });
   }
 
   private TracePromptBundle buildTracePromptBundle(ApiDtos.PalmLineTraces traces) {
@@ -815,24 +1068,39 @@ public class PalmistryService {
       String rareMark,
       String imageData,
       String recordMode,
-      String tracePromptBlock) {
+      String tracePromptBlock,
+      ApiDtos.AnalyzeProgressListener listener) {
     if (!llmClientService.isAvailable()) {
-      return new LlmPalmOverviewResult(false, "llm_disabled", null);
+      return new LlmPalmOverviewResult(false, "llm_disabled", null, null);
     }
 
-    String systemPrompt = "你是手相研究所的资深解读师，风格专业、具体、可验证。优先返回严格 JSON，不要 markdown。";
+    String systemPrompt = "你是手相研究所的资深解读师，风格专业、具体、可验证。优先返回严格 JSON，不要 markdown。" + CONTENT_GUARDRAIL;
+    String loreBlock = loreService.retrieve(handType, rareMark);
     String userPrompt = "请基于输入生成 JSON，字段结构必须是"
-        + "{\"personalityTags\":[\"\",\"\",\"\"],\"freeOverview\":[{\"lineName\":\"感情线\",\"tags\":\"\",\"shortInterpretation\":\"\"},{\"lineName\":\"智慧线\",\"tags\":\"\",\"shortInterpretation\":\"\"},{\"lineName\":\"生命线\",\"tags\":\"\",\"shortInterpretation\":\"\"}],\"teaser\":\"\"}。"
+        + "{\"imageAccepted\":true,\"rejectReason\":\"\",\"personalityTags\":[\"\",\"\",\"\"],\"freeOverview\":[{\"lineName\":\"感情线\",\"tags\":\"\",\"shortInterpretation\":\"\"},{\"lineName\":\"智慧线\",\"tags\":\"\",\"shortInterpretation\":\"\"},{\"lineName\":\"生命线\",\"tags\":\"\",\"shortInterpretation\":\"\"}],\"teaser\":\"\"}。"
+        + "先校验图片：如果图片主体不是一只清晰的人类手掌正面，imageAccepted 必须为 false，"
+        + "rejectReason 固定为“这张图片不是手相，请上传清晰的手掌照片。”，其余字段留空；"
+        + "是手掌则 imageAccepted 为 true、rejectReason 为空字符串，并生成完整解读。"
         + "输入：handType=" + handType + "，tags=" + String.join("/", tags) + "，rareMark=" + rareMark + "。"
         + "recordMode=" + recordMode + "。"
         + (tracePromptBlock == null || tracePromptBlock.isBlank() ? "" : "\\n" + tracePromptBlock)
+        + (loreBlock.isBlank() ? "" : "\n[Knowledge]\n" + loreBlock + "\n以上知识条目是唯一的相术依据，只做润色与连接，不得输出条目之外的相术断言。")
         + "要求：中文、语气可信。每条 shortInterpretation 120-180 字，必须包含线条形态描述+性格/状态解读+具体可执行建议(动作+频次)+时间窗口或适用情境。"
         + "tags 用 2-4 个短语，用 / 分隔。teaser 40-70 字，提示稀有印记但不泄露完整解析。避免空泛套话。";
 
     try {
-      String content = llmClientService.chat(systemPrompt, userPrompt, imageData);
+      String content = generateContentStreaming(systemPrompt, userPrompt, imageData, listener);
       try {
         JsonNode node = parseJsonNode(content);
+        // 校验与解读合并为同一次调用（省一次 8-15s 的视觉模型往返）。
+        if (!node.path("imageAccepted").asBoolean(true)) {
+          String rejectReason = normalizeText(
+              node.path("rejectReason").asText("这张图片不是手相，请上传清晰的手掌照片。"), 64);
+          if (rejectReason.isBlank()) {
+            rejectReason = "这张图片不是手相，请上传清晰的手掌照片。";
+          }
+          return new LlmPalmOverviewResult(false, "image_rejected", null, rejectReason);
+        }
         List<String> llmTags = List.of(
             node.path("personalityTags").path(0).asText(tags.get(0)),
             node.path("personalityTags").path(1).asText(tags.get(1)),
@@ -856,16 +1124,51 @@ public class PalmistryService {
                   .asText("你的生命线弧度饱满且深度适中，说明体能底盘稳定，但在高压阶段易出现延迟性疲劳。建议连续工作2天后安排1次30分钟低强度运动与拉伸，固定睡眠窗口，减少能量透支。适用情境：连续加班或高密度输出周期。")));
 
         String llmTeaser = node.path("teaser").asText("检测到稀有印记「" + rareMark + "」，完整解析可在报告页查询");
-        return new LlmPalmOverviewResult(true, "ok_json", new LlmPalmOverview(llmTags, llmOverview, llmTeaser));
+        LlmPalmOverview overview = new LlmPalmOverview(llmTags, llmOverview, llmTeaser);
+        if (containsBannedClaims(overviewTexts(overview))) {
+          return new LlmPalmOverviewResult(false, "banned_content_filtered", null, null);
+        }
+        return new LlmPalmOverviewResult(true, "ok_json", overview, null);
       } catch (Exception parseError) {
         LlmPalmOverview textFallback = buildPalmOverviewFromText(content, tags, rareMark);
         if (textFallback != null) {
-          return new LlmPalmOverviewResult(true, "ok_text", textFallback);
+          if (containsBannedClaims(overviewTexts(textFallback))) {
+            return new LlmPalmOverviewResult(false, "banned_content_filtered", null, null);
+          }
+          return new LlmPalmOverviewResult(true, "ok_text", textFallback, null);
         }
-        return new LlmPalmOverviewResult(false, "parse_failed:" + shortReason(parseError), null);
+        return new LlmPalmOverviewResult(false, "parse_failed:" + shortReason(parseError), null, null);
       }
     } catch (Exception callError) {
-      return new LlmPalmOverviewResult(false, "call_failed:" + shortReason(callError), null);
+      return new LlmPalmOverviewResult(false, "call_failed:" + shortReason(callError), null, null);
+    }
+  }
+
+  /**
+   * 优先流式生成并把真实生成进度回调给 listener（SSE 用）；
+   * 流式失败时回退到带完整重试链的非流式调用。
+   */
+  private String generateContentStreaming(
+      String systemPrompt,
+      String userPrompt,
+      String imageData,
+      ApiDtos.AnalyzeProgressListener listener) {
+    if (listener == ApiDtos.AnalyzeProgressListener.NONE) {
+      return llmClientService.chat(systemPrompt, userPrompt, imageData);
+    }
+    AtomicInteger generated = new AtomicInteger();
+    AtomicLong lastSentAt = new AtomicLong();
+    try {
+      return llmClientService.chatStream(systemPrompt, userPrompt, imageData, delta -> {
+        int chars = generated.addAndGet(delta.codePointCount(0, delta.length()));
+        long now = System.currentTimeMillis();
+        long last = lastSentAt.get();
+        if (now - last >= 600 && lastSentAt.compareAndSet(last, now)) {
+          listener.onGeneratedChars(chars);
+        }
+      });
+    } catch (Exception streamError) {
+      return llmClientService.chat(systemPrompt, userPrompt, imageData);
     }
   }
 
@@ -1089,7 +1392,7 @@ public class PalmistryService {
       return null;
     }
 
-    String systemPrompt = "你是手相研究所的深度报告引擎。必须返回严格 JSON 数组，不要 markdown。";
+    String systemPrompt = "你是手相研究所的深度报告引擎。必须返回严格 JSON 数组，不要 markdown。" + CONTENT_GUARDRAIL;
     String userPrompt = "请返回 JSON 数组 sections，长度3。每个元素结构"
         + "{\"title\":\"\",\"detail\":\"\",\"cyberTip\":\"\"}。"
         + "输入：handType=" + session.handType() + " rareMark=" + session.rareMark() + "。"
@@ -1123,7 +1426,7 @@ public class PalmistryService {
       return null;
     }
 
-    String systemPrompt = "你是CP合拍文案引擎。必须返回严格 JSON，不要 markdown。";
+    String systemPrompt = "你是CP合拍文案引擎。必须返回严格 JSON，不要 markdown。" + CONTENT_GUARDRAIL;
     String userPrompt = "请返回 JSON {\"comboName\":\"\",\"interpretation\":\"\",\"tip\":\"\"}。"
         + "输入：A=" + request.userA().handType() + "/" + request.userA().mbti()
         + " B=" + request.userB().handType() + "/" + request.userB().mbti()
@@ -1227,7 +1530,8 @@ public class PalmistryService {
   private record LlmPalmOverviewResult(
       boolean used,
       String status,
-      LlmPalmOverview overview) {
+      LlmPalmOverview overview,
+      String rejectReason) {
   }
 
   private record LlmCpNarrative(
@@ -1313,7 +1617,7 @@ public class PalmistryService {
     return "purple";
   }
 
-  private String buildCompareHint(PalmRecordEntity previous, int energy, int wisdom, int emotion) {
+  private String buildCompareHint(PalmRecordRepository.EnergySnapshot previous, int energy, int wisdom, int emotion) {
     if (previous == null) {
       return "这是你的首次周记录，已建立能量基线。";
     }
@@ -1381,13 +1685,13 @@ public class PalmistryService {
     }
   }
 
-  private String calcDominantEnergy(List<PalmRecordEntity> rows) {
+  private String calcDominantEnergy(List<PalmRecordRepository.RecordSummary> rows) {
     if (rows.isEmpty()) {
       return "休整之月";
     }
-    double energyAvg = rows.stream().mapToInt(PalmRecordEntity::getEnergyLevel).average().orElse(0);
-    double wisdomAvg = rows.stream().mapToInt(PalmRecordEntity::getWisdomActive).average().orElse(0);
-    double emotionAvg = rows.stream().mapToInt(PalmRecordEntity::getEmotionWave).average().orElse(0);
+    double energyAvg = rows.stream().mapToInt(PalmRecordRepository.RecordSummary::getEnergyLevel).average().orElse(0);
+    double wisdomAvg = rows.stream().mapToInt(PalmRecordRepository.RecordSummary::getWisdomActive).average().orElse(0);
+    double emotionAvg = rows.stream().mapToInt(PalmRecordRepository.RecordSummary::getEmotionWave).average().orElse(0);
     if (wisdomAvg >= energyAvg && wisdomAvg >= emotionAvg) {
       return "创造之月";
     }
@@ -1400,12 +1704,12 @@ public class PalmistryService {
     return "休整之月";
   }
 
-  private String buildMonthlyReportText(String yearMonth, String dominant, List<PalmRecordEntity> rows) {
+  private String buildMonthlyReportText(String yearMonth, String dominant, List<PalmRecordRepository.RecordSummary> rows) {
     if (rows.isEmpty()) {
       return yearMonth + " 暂无记录，建议每周至少拍一次手相，建立你的能量曲线。";
     }
-    PalmRecordEntity maxEnergy = rows.stream().max(Comparator.comparingInt(PalmRecordEntity::getEnergyLevel)).orElse(rows.get(0));
-    PalmRecordEntity minEnergy = rows.stream().min(Comparator.comparingInt(PalmRecordEntity::getEnergyLevel)).orElse(rows.get(0));
+    PalmRecordRepository.RecordSummary maxEnergy = rows.stream().max(Comparator.comparingInt(PalmRecordRepository.RecordSummary::getEnergyLevel)).orElse(rows.get(0));
+    PalmRecordRepository.RecordSummary minEnergy = rows.stream().min(Comparator.comparingInt(PalmRecordRepository.RecordSummary::getEnergyLevel)).orElse(rows.get(0));
     return yearMonth + " 你完成了 " + rows.size() + " 次记录，本月主导能量为「" + dominant + "」。"
         + "高峰出现在 " + maxEnergy.getRecordDate() + "，低谷出现在 " + minEnergy.getRecordDate()
         + "。建议围绕高峰时段安排关键任务，在低谷期留出恢复窗口。";

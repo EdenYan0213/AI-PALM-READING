@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>月度能量月相图</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     body {
       background:
@@ -70,7 +70,22 @@
           : window.location.origin + '/api/v1';
       const USER_KEY = 'palmistry.userId';
       const query = new URLSearchParams(window.location.search);
-      const userId = query.get('userId') || localStorage.getItem(USER_KEY) || 'guest-demo';
+      const ensureUserId = async () => {
+        let uid = query.get('userId') || localStorage.getItem(USER_KEY) || '';
+        try {
+          const identityResponse = await fetch(API_BASE + '/user/identity' + (uid ? '?previous=' + encodeURIComponent(uid) : ''));
+          if (identityResponse.ok) {
+            const identity = await identityResponse.json();
+            if (identity && identity.userId) {
+              uid = identity.userId;
+              localStorage.setItem(USER_KEY, uid);
+            }
+          }
+        } catch (error) {
+          // 离线时沿用本地身份。
+        }
+        return uid;
+      };
       const yearMonth = query.get('yearMonth') || new Date().toISOString().slice(0, 7);
 
       const subtitle = document.getElementById('subtitle');
@@ -111,7 +126,7 @@
         orbitSvg.innerHTML += '<text x="180" y="178" text-anchor="middle" fill="#edf2ff" font-size="16" font-weight="600">' + centerText + '</text>';
       };
 
-      fetch(API_BASE + '/record/monthly-report?userId=' + encodeURIComponent(userId) + '&yearMonth=' + encodeURIComponent(yearMonth))
+      ensureUserId().then((userId) => fetch(API_BASE + '/record/monthly-report?userId=' + encodeURIComponent(userId) + '&yearMonth=' + encodeURIComponent(yearMonth)))
         .then((response) => {
           if (!response.ok) {
             throw new Error('HTTP ' + response.status);

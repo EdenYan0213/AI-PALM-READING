@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>记录回顾</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     body {
       background: linear-gradient(180deg, #fff8f7, #f5f8ff);
@@ -70,7 +70,22 @@
           ? 'http://localhost:8080/api/v1'
           : window.location.origin + '/api/v1';
       const query = new URLSearchParams(window.location.search);
-      const userId = query.get('userId') || localStorage.getItem('palmistry.userId') || 'guest-demo';
+      const ensureUserId = async () => {
+        let uid = query.get('userId') || localStorage.getItem('palmistry.userId') || '';
+        try {
+          const identityResponse = await fetch(API_BASE + '/user/identity' + (uid ? '?previous=' + encodeURIComponent(uid) : ''));
+          if (identityResponse.ok) {
+            const identity = await identityResponse.json();
+            if (identity && identity.userId) {
+              uid = identity.userId;
+              localStorage.setItem('palmistry.userId', uid);
+            }
+          }
+        } catch (error) {
+          // 离线时沿用本地身份。
+        }
+        return uid;
+      };
       const date = query.get('date') || new Date().toISOString().slice(0, 10);
 
       const dateText = document.getElementById('dateText');
@@ -82,7 +97,7 @@
 
       dateText.textContent = '记录日期：' + date;
 
-      fetch(API_BASE + '/record/detail?userId=' + encodeURIComponent(userId) + '&date=' + encodeURIComponent(date))
+      ensureUserId().then((userId) => fetch(API_BASE + '/record/detail?userId=' + encodeURIComponent(userId) + '&date=' + encodeURIComponent(date)))
         .then((response) => {
           if (!response.ok) {
             throw new Error('HTTP ' + response.status);

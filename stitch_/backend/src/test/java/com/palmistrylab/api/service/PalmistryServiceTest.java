@@ -19,14 +19,18 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,6 +52,8 @@ class PalmistryServiceTest {
 
   private PalmistryService palmistryService;
   private LlmClientService llmClientService;
+  private UserTokenService userTokenService;
+  private PerceptionClient perceptionClient;
 
   @BeforeEach
   void setUp() {
@@ -58,14 +64,20 @@ class PalmistryServiceTest {
         "http://localhost:9",
         "",
         "test-model",
+        "test-model",
         "test-model");
+    userTokenService = new UserTokenService("test-secret");
+    perceptionClient = new PerceptionClient(new RestTemplateBuilder(), new ObjectMapper(), "");
     palmistryService = new PalmistryService(
         sessionRecordRepository,
         appEventRepository,
         palmRecordRepository,
         monthlyReportRepository,
         llmClientService,
-        new ObjectMapper());
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService());
   }
 
   @Test
@@ -86,6 +98,9 @@ class PalmistryServiceTest {
     assertThat(response.freeOverview()).hasSize(3);
     assertThat(response.llmUsed()).isFalse();
     assertThat(response.llmStatus()).isEqualTo("llm_disabled");
+    assertThat(response.featureSet()).isNotNull();
+    assertThat(response.featureSet().source()).isEqualTo("heuristic_hash");
+    assertThat(response.featureSet().palmShape().type()).isEqualTo(response.handType());
 
     ArgumentCaptor<SessionRecordEntity> sessionCaptor = ArgumentCaptor.forClass(SessionRecordEntity.class);
     verify(sessionRecordRepository).save(sessionCaptor.capture());
@@ -127,6 +142,104 @@ class PalmistryServiceTest {
   }
 
   @Test
+  void unlockDeepRestoresSessionFromRepositoryAfterRestart() {
+    when(appEventRepository.save(any(AppEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(sessionRecordRepository.findById("PALM-RESTORED"))
+        .thenReturn(Optional.of(new SessionRecordEntity(
+            "PALM-RESTORED", "SINGLE", "水型手", "凤凰眼", Instant.now())));
+
+    ApiDtos.UnlockDeepResponse deepResponse = palmistryService.unlockDeep("PALM-RESTORED");
+
+    assertThat(deepResponse.sessionId()).isEqualTo("PALM-RESTORED");
+    assertThat(deepResponse.unlocked()).isTrue();
+    assertThat(deepResponse.sections()).hasSize(3);
+
+    ApiDtos.RareMarkQueryResponse rareMarkResponse = palmistryService.queryRareMark("PALM-RESTORED");
+    assertThat(rareMarkResponse.markName()).isEqualTo("凤凰眼");
+  }
+
+  @Test
+  void unlockDeepRejectsUnknownSessionWhenNothingRestorable() {
+    when(sessionRecordRepository.findById("PALM-GONE")).thenReturn(Optional.empty());
+
+    org.junit.jupiter.api.Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () -> palmistryService.unlockDeep("PALM-GONE"));
+  }
+
+  @Test
+  void analyzePalmReturnsCachedResultForSameImage() {
+    when(sessionRecordRepository.save(any(SessionRecordEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(appEventRepository.save(any(AppEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    String imageData = "data:image/png;base64,cache-test-image";
+    ApiDtos.PalmAnalyzeResponse first = palmistryService.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, imageData, null, "standard"));
+    ApiDtos.PalmAnalyzeResponse second = palmistryService.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, imageData, null, "standard"));
+
+    assertThat(second.sessionId()).isEqualTo(first.sessionId());
+    assertThat(second.handType()).isEqualTo(first.handType());
+    assertThat(second.freeOverview()).isEqualTo(first.freeOverview());
+
+    ApiDtos.PalmAnalyzeResponse other = palmistryService.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, "data:image/png;base64,different-image", null, "standard"));
+    assertThat(other.sessionId()).isNotEqualTo(first.sessionId());
+  }
+
+  @Test
+  void analyzePalmFiltersBannedLlmContent() {
+    String bannedJson = "{\"personalityTags\":[\"A\",\"B\",\"C\"],"
+        + "\"freeOverview\":["
+        + "{\"lineName\":\"感情线\",\"tags\":\"t\",\"shortInterpretation\":\"你近期适合加仓买入股票，稳赚翻倍。\"},"
+        + "{\"lineName\":\"智慧线\",\"tags\":\"t\",\"shortInterpretation\":\"这是完全正常的内容。\"},"
+        + "{\"lineName\":\"生命线\",\"tags\":\"t\",\"shortInterpretation\":\"这也是正常内容。\"}],"
+        + "\"teaser\":\"正常提示\"}";
+    PalmistryService service = new PalmistryService(
+        sessionRecordRepository,
+        appEventRepository,
+        palmRecordRepository,
+        monthlyReportRepository,
+        new StubVisionLlmClientService(bannedJson),
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService());
+    when(sessionRecordRepository.save(any(SessionRecordEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(appEventRepository.save(any(AppEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    ApiDtos.PalmAnalyzeResponse response = service.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, "data:image/png;base64,banned-test", null, "standard"));
+
+    assertThat(response.llmUsed()).isFalse();
+    assertThat(response.llmStatus()).isEqualTo("banned_content_filtered");
+    assertThat(response.freeOverview().get(0).shortInterpretation()).doesNotContain("股票");
+  }
+
+  @Test
+  void analyzePalmDeterministicHandTypeAcrossInstancesWithoutPerception() {
+    when(sessionRecordRepository.save(any(SessionRecordEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(appEventRepository.save(any(AppEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    String imageData = "data:image/png;base64,determinism-check";
+    PalmistryService serviceA = new PalmistryService(
+        sessionRecordRepository, appEventRepository, palmRecordRepository, monthlyReportRepository,
+        llmClientService, new ObjectMapper(), userTokenService, perceptionClient, new LoreService());
+    PalmistryService serviceB = new PalmistryService(
+        sessionRecordRepository, appEventRepository, palmRecordRepository, monthlyReportRepository,
+        llmClientService, new ObjectMapper(), userTokenService, perceptionClient, new LoreService());
+
+    ApiDtos.PalmAnalyzeResponse fromA = serviceA.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, imageData, null, "standard"));
+    ApiDtos.PalmAnalyzeResponse fromB = serviceB.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, imageData, null, "standard"));
+
+    assertThat(fromB.handType()).isEqualTo(fromA.handType());
+    assertThat(fromB.rareMark()).isEqualTo(fromA.rareMark());
+    assertThat(fromB.personalityTags()).isEqualTo(fromA.personalityTags());
+  }
+
+  @Test
   void metricsSummaryAggregatesCountsAndRates() {
     when(sessionRecordRepository.countBySessionType("SINGLE")).thenReturn(2L);
     when(sessionRecordRepository.countBySessionType("CP")).thenReturn(1L);
@@ -152,7 +265,8 @@ class PalmistryServiceTest {
 
   @Test
   void submitWeeklyRecordPersistsCurrentSnapshotAndUnlocksMonthlyThreshold() {
-    when(palmRecordRepository.findFirstByUserIdAndRecordDateLessThanOrderByRecordDateDescCreatedAtDesc(eq("user-1"), any(LocalDate.class)))
+    String validUserId = userTokenService.issueUserId();
+    when(palmRecordRepository.findFirstByUserIdAndRecordDateLessThanOrderByRecordDateDescCreatedAtDesc(eq(validUserId), any(LocalDate.class)))
         .thenReturn(Optional.empty());
 
     when(palmRecordRepository.save(any(PalmRecordEntity.class))).thenAnswer(invocation -> {
@@ -176,19 +290,19 @@ class PalmistryServiceTest {
         }
       };
     });
-    when(palmRecordRepository.countByUserIdAndRecordDateBetween(eq("user-1"), any(LocalDate.class), any(LocalDate.class)))
+    when(palmRecordRepository.countByUserIdAndRecordDateBetween(eq(validUserId), any(LocalDate.class), any(LocalDate.class)))
         .thenReturn(4L);
     when(appEventRepository.save(any(AppEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     ApiDtos.WeeklyRecordResponse response = palmistryService.submitWeeklyRecord(new ApiDtos.WeeklyRecordRequest(
-        "user-1",
+        validUserId,
         "quick",
         "data:image/png;base64,abc",
         null,
         "2026-07-10"));
 
     assertThat(response.recordId()).isEqualTo("77");
-    assertThat(response.userId()).isEqualTo("user-1");
+    assertThat(response.userId()).isEqualTo(validUserId);
     assertThat(response.recordMode()).isEqualTo("quick");
     assertThat(response.recordDate()).isEqualTo("2026-07-10");
     assertThat(response.monthlyUnlocked()).isTrue();
@@ -197,7 +311,7 @@ class PalmistryServiceTest {
 
     ArgumentCaptor<PalmRecordEntity> recordCaptor = ArgumentCaptor.forClass(PalmRecordEntity.class);
     verify(palmRecordRepository).save(recordCaptor.capture());
-    assertThat(recordCaptor.getValue().getUserId()).isEqualTo("user-1");
+    assertThat(recordCaptor.getValue().getUserId()).isEqualTo(validUserId);
     assertThat(recordCaptor.getValue().getRecordType()).isEqualTo("single");
     assertThat(recordCaptor.getValue().getRecordMode()).isEqualTo("quick");
 
@@ -209,26 +323,83 @@ class PalmistryServiceTest {
   }
 
   @Test
+  void submitWeeklyRecordRejectsForgedUserId() {
+    org.junit.jupiter.api.Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () -> palmistryService.submitWeeklyRecord(new ApiDtos.WeeklyRecordRequest(
+            "user-1",
+            "quick",
+            "data:image/png;base64,abc",
+            null,
+            "2026-07-10")));
+  }
+
+  @Test
+  void submitWeeklyRecordStoresPhotoOnFileSystem(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) {
+    String validUserId = userTokenService.issueUserId();
+    when(palmRecordRepository.findFirstByUserIdAndRecordDateLessThanOrderByRecordDateDescCreatedAtDesc(eq(validUserId), any(LocalDate.class)))
+        .thenReturn(Optional.empty());
+    when(palmRecordRepository.save(any(PalmRecordEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    when(palmRecordRepository.countByUserIdAndRecordDateBetween(eq(validUserId), any(LocalDate.class), any(LocalDate.class)))
+        .thenReturn(1L);
+
+    // 使用真实照片落盘的完整构造（照片不进 DB，photo_url 只存相对路径）
+    PalmistryService serviceWithStorage = new PalmistryService(
+        sessionRecordRepository,
+        appEventRepository,
+        palmRecordRepository,
+        monthlyReportRepository,
+        llmClientService,
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService(),
+        Runnable::run,
+        new PhotoStorageService(tempDir.toString()));
+
+    serviceWithStorage.submitWeeklyRecord(new ApiDtos.WeeklyRecordRequest(
+        validUserId,
+        "quick",
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+        null,
+        "2026-07-10"));
+
+    ArgumentCaptor<PalmRecordEntity> recordCaptor = ArgumentCaptor.forClass(PalmRecordEntity.class);
+    verify(palmRecordRepository).save(recordCaptor.capture());
+    String photoUrl = recordCaptor.getValue().getPhotoUrl();
+    assertThat(photoUrl).isNotNull();
+    assertThat(photoUrl).doesNotStartWith("data:");
+    assertThat(java.nio.file.Files.exists(tempDir.resolve(photoUrl))).isTrue();
+  }
+
+  @Test
+  void analyzePalmRejectsOversizedImage() {
+    String oversized = "data:image/png;base64," + "A".repeat(12_000_001);
+    org.junit.jupiter.api.Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () -> palmistryService.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+            "camera", "left", null, oversized, null, "standard")));
+  }
+
+  @Test
   void getRecordDetailReturnsLatestRecordForDate() {
-    PalmRecordEntity record = new PalmRecordEntity(
-        "user-2",
-        "single",
-        "standard",
-        "image",
-        "{}",
-        8,
-        6,
-        5,
-        "summary",
-        "note",
-        LocalDate.parse("2026-07-10"),
-        Instant.parse("2026-07-10T10:15:30Z"));
-    when(palmRecordRepository.findFirstByUserIdAndRecordDateOrderByCreatedAtDesc("user-2", LocalDate.parse("2026-07-10")))
-        .thenReturn(Optional.of(record));
+    String validUserId = userTokenService.issueUserId();
+    when(palmRecordRepository.findFirstByUserIdAndRecordDateOrderByCreatedAtDesc(validUserId, LocalDate.parse("2026-07-10")))
+        .thenReturn(Optional.of(com.palmistrylab.api.repository.PalmRecordRepository.RecordSummary.of(
+            42L,
+            validUserId,
+            LocalDate.parse("2026-07-10"),
+            "standard",
+            8,
+            6,
+            5,
+            "summary",
+            "note")));
 
-    ApiDtos.RecordDetailResponse response = palmistryService.getRecordDetail("user-2", "2026-07-10");
+    ApiDtos.RecordDetailResponse response = palmistryService.getRecordDetail(validUserId, "2026-07-10");
 
-    assertThat(response.userId()).isEqualTo("user-2");
+    assertThat(response.userId()).isEqualTo(validUserId);
+    assertThat(response.recordId()).isEqualTo("42");
     assertThat(response.recordDate()).isEqualTo("2026-07-10");
     assertThat(response.runeColor()).isEqualTo("gold");
   }
@@ -241,7 +412,10 @@ class PalmistryServiceTest {
         palmRecordRepository,
         monthlyReportRepository,
         new StubVisionLlmClientService("{\"accepted\":true,\"confidence\":0.97,\"reason\":\"清晰手掌\"}"),
-        new ObjectMapper());
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService());
 
     ApiDtos.PalmImageValidationResponse response = service.validatePalmImage("data:image/png;base64,abc");
 
@@ -249,6 +423,76 @@ class PalmistryServiceTest {
     assertThat(response.source()).isEqualTo("ai");
     assertThat(response.confidence()).isEqualTo(0.97);
     assertThat(response.reason()).contains("清晰手掌");
+  }
+
+  @Test
+  void validatePalmImageCachesResultPerImage() {
+    StubVisionLlmClientService stub = new StubVisionLlmClientService(
+        "{\"accepted\":true,\"confidence\":0.97,\"reason\":\"清晰手掌\"}");
+    PalmistryService service = new PalmistryService(
+        sessionRecordRepository,
+        appEventRepository,
+        palmRecordRepository,
+        monthlyReportRepository,
+        stub,
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService());
+
+    String imageData = "data:image/png;base64,cache-validation";
+    service.validatePalmImage(imageData);
+    ApiDtos.PalmImageValidationResponse second = service.validatePalmImage(imageData);
+
+    assertThat(second.source()).isEqualTo("ai");
+    assertThat(stub.chatCalls.get()).isEqualTo(1);
+  }
+
+  @Test
+  void analyzePalmRejectsImageWhenLlmSaysNotPalm() {
+    StubVisionLlmClientService stub = new StubVisionLlmClientService(
+        "{\"imageAccepted\":false,\"rejectReason\":\"这张图片不是手相，请上传清晰的手掌照片。\"}");
+    PalmistryService service = new PalmistryService(
+        sessionRecordRepository,
+        appEventRepository,
+        palmRecordRepository,
+        monthlyReportRepository,
+        stub,
+        new ObjectMapper(),
+        userTokenService,
+        perceptionClient,
+        new LoreService());
+
+    String imageData = "data:image/png;base64,not-a-palm";
+    org.junit.jupiter.api.Assertions.assertThrows(
+        ImageRejectedException.class,
+        () -> service.analyzePalm(new ApiDtos.AnalyzePalmRequest("camera", "left", null, imageData, null, "standard")));
+
+    // 拒绝结果被缓存：同图再次分析不再调用 LLM，也不产生会话
+    int callsAfterFirst = stub.chatCalls.get();
+    org.junit.jupiter.api.Assertions.assertThrows(
+        ImageRejectedException.class,
+        () -> service.analyzePalm(new ApiDtos.AnalyzePalmRequest("camera", "left", null, imageData, null, "standard")));
+    assertThat(stub.chatCalls.get()).isEqualTo(callsAfterFirst);
+    verify(sessionRecordRepository, never()).save(any(SessionRecordEntity.class));
+  }
+
+  @Test
+  void analyzePalmEmitsProgressStagesToListener() {
+    when(sessionRecordRepository.save(any(SessionRecordEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+    List<String> stages = new ArrayList<>();
+    ApiDtos.AnalyzeProgressListener listener = new ApiDtos.AnalyzeProgressListener() {
+      @Override
+      public void onStage(String stage, int percent, String message) {
+        stages.add(stage);
+      }
+    };
+
+    palmistryService.analyzePalm(new ApiDtos.AnalyzePalmRequest(
+        "camera", "left", null, "data:image/png;base64,stage-test", null, "standard"), listener);
+
+    assertThat(stages).containsExactly("perception", "generate", "finalize");
   }
 
   @Test
@@ -268,9 +512,10 @@ class PalmistryServiceTest {
 
   private static class StubVisionLlmClientService extends LlmClientService {
     private final String response;
+    private final AtomicInteger chatCalls = new AtomicInteger();
 
     StubVisionLlmClientService(String response) {
-      super(new RestTemplateBuilder(), new ObjectMapper(), true, "http://localhost:9", "test-key", "test-model", "test-model");
+      super(new RestTemplateBuilder(), new ObjectMapper(), true, "http://localhost:9", "test-key", "test-model", "test-model", "test-model");
       this.response = response;
     }
 
@@ -281,6 +526,13 @@ class PalmistryServiceTest {
 
     @Override
     public String chat(String systemPrompt, String userPrompt, String imageData) {
+      chatCalls.incrementAndGet();
+      return response;
+    }
+
+    @Override
+    public String chatForValidation(String systemPrompt, String userPrompt, String imageData) {
+      chatCalls.incrementAndGet();
       return response;
     }
   }

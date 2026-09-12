@@ -1,5 +1,9 @@
 server:
   port: 8080
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
 
 spring:
   application:
@@ -10,6 +14,9 @@ spring:
     hibernate:
       ddl-auto: update
     open-in-view: false
+  mvc:
+    async:
+      request-timeout: 180000
 
 management:
   endpoints:
@@ -22,11 +29,24 @@ llm:
   base-url: ${LLM_BASE_URL:https://api.siliconflow.cn/v1}
   api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:Pro/moonshotai/Kimi-K2.6}
+  # 视觉/文本拆分（TD §13.1）：带图请求优先走此模型；留空则回退主模型
+  vision-model: ${LLM_VISION_MODEL:}
   fallback-model: ${LLM_FALLBACK_MODEL:ZhipuAI/GLM-5.1}
+  # 交互型接口：收紧超时避免重试级联把请求拖到分钟级（原为 connect 10s / read 90s）
+  connect-timeout-seconds: ${LLM_CONNECT_TIMEOUT_SECONDS:5}
+  read-timeout-seconds: ${LLM_READ_TIMEOUT_SECONDS:30}
 
 app:
+  # 周记录照片落盘目录：photo_url 列只存相对路径，不再把 base64 大字段写进 MySQL
+  photos:
+    dir: ${PHOTOS_DIR:./data/photos}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8080,http://127.0.0.1:8080}
+  # 感知边车（V0.2）：留空关闭，主流程降级为 imageHash 确定性兜底
+  perception:
+    base-url: ${PERCEPTION_BASE_URL:}
+  user-token:
+    secret: ${USER_TOKEN_SECRET:palmistry-local-dev-secret}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     window-seconds: ${RATE_LIMIT_WINDOW_SECONDS:60}

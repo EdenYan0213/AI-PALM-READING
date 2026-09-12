@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>手相日历</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     body {
       background:
@@ -84,10 +84,24 @@
       const unlockHint = document.getElementById('unlockHint');
       const monthlyReportButton = document.getElementById('monthlyReportButton');
 
-      if (!localStorage.getItem(USER_KEY)) {
-        localStorage.setItem(USER_KEY, 'guest-demo');
-      }
-      const userId = localStorage.getItem(USER_KEY);
+      // 向服务端签发/续用身份，替代旧的 guest-demo 写死值。
+      const ensureUserId = async () => {
+        let uid = localStorage.getItem(USER_KEY) || '';
+        try {
+          const identityResponse = await fetch(API_BASE + '/user/identity' + (uid ? '?previous=' + encodeURIComponent(uid) : ''));
+          if (identityResponse.ok) {
+            const identity = await identityResponse.json();
+            if (identity && identity.userId) {
+              uid = identity.userId;
+              localStorage.setItem(USER_KEY, uid);
+            }
+          }
+        } catch (error) {
+          // 离线时沿用本地身份。
+        }
+        return uid;
+      };
+      let userId = null;
       let monthCursor = new Date();
 
       const toYM = (d) => {
@@ -164,6 +178,7 @@
       };
 
       const load = async () => {
+        userId = await ensureUserId();
         const ym = toYM(monthCursor);
         monthTitle.textContent = ym;
         const response = await fetch(API_BASE + '/record/calendar?userId=' + encodeURIComponent(userId) + '&yearMonth=' + encodeURIComponent(ym));

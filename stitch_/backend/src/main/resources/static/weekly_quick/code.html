@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>本周手相记录</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     body {
       background:
@@ -128,28 +128,42 @@
       const saveNoteButton = document.getElementById('saveNoteButton');
       const noteStatusText = document.getElementById('noteStatusText');
       const monthlyLink = document.getElementById('monthlyLink');
-      const API_BASE = window.location.protocol === 'file:'
-          ? 'http://localhost:8080/api/v1'
-          : window.location.origin + '/api/v1';
 
       let imageData = localStorage.getItem(CAPTURE_KEY) || '';
       let currentRecordId = null;
 
-      let imageValidated = Boolean(localStorage.getItem(CAPTURE_KEY));
-
-      const validatePalmImage = async (dataUrl) => {
-        const response = await fetch(API_BASE + '/palm/validate-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageData: dataUrl })
-        });
-
-        if (!response.ok) {
-          throw new Error('HTTP ' + response.status);
-        }
-
-        return response.json();
+      const isSkinTone = (r, g, b) => {
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        return r > 95 && g > 40 && b > 20 && (max - min) > 15 && Math.abs(r - g) > 15 && r > g && r > b;
       };
+
+      const validatePalmImage = (dataUrl) => new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          const size = 64;
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) {
+            resolve(false);
+            return;
+          }
+          ctx.drawImage(image, 0, 0, size, size);
+          const { data } = ctx.getImageData(0, 0, size, size);
+          let skinCount = 0;
+          for (let i = 0; i < size * size; i++) {
+            const offset = i * 4;
+            if (isSkinTone(data[offset], data[offset + 1], data[offset + 2])) {
+              skinCount += 1;
+            }
+          }
+          resolve(skinCount >= Math.round(size * size * 0.12));
+        };
+        image.onerror = () => resolve(false);
+        image.src = dataUrl;
+      });
 
       const today = new Date();
       const minDate = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
@@ -158,9 +172,23 @@
       recordDateInput.min = toDateText(minDate);
       recordDateInput.value = toDateText(today);
 
-      if (!localStorage.getItem(USER_KEY)) {
-        localStorage.setItem(USER_KEY, 'guest-demo');
-      }
+      // 向服务端签发/续用身份，替代旧的 guest-demo 写死值。
+      const ensureUserId = async () => {
+        let uid = localStorage.getItem(USER_KEY) || '';
+        try {
+          const identityResponse = await fetch(API_BASE + '/user/identity' + (uid ? '?previous=' + encodeURIComponent(uid) : ''));
+          if (identityResponse.ok) {
+            const identity = await identityResponse.json();
+            if (identity && identity.userId) {
+              uid = identity.userId;
+              localStorage.setItem(USER_KEY, uid);
+            }
+          }
+        } catch (error) {
+          // 离线时沿用本地身份。
+        }
+        return uid;
+      };
 
       if (imageData) {
         previewImage.src = imageData;
@@ -195,26 +223,21 @@
         const file = photoInput.files && photoInput.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = async () => {
+        reader.onload = () => {
           const dataUrl = String(reader.result || '');
-          try {
-            const validation = await validatePalmImage(dataUrl);
-            if (!validation.accepted) {
+          validatePalmImage(dataUrl).then((valid) => {
+            if (!valid) {
               imageData = '';
-              imageValidated = false;
               previewWrap.classList.add('hidden');
-              statusText.textContent = validation.reason || '请输入手相图片';
+              statusText.textContent = '仅支持手掌照片，请上传清晰的手掌正面图片';
               return;
             }
             imageData = dataUrl;
-            imageValidated = true;
             localStorage.setItem(CAPTURE_KEY, imageData);
             previewImage.src = imageData;
             previewWrap.classList.remove('hidden');
-            statusText.textContent = validation.source === 'ai' ? 'AI 已确认是手掌，可以开始生成报告' : '照片已通过手掌校验，可以开始生成报告';
-          } catch (error) {
-            statusText.textContent = '识别服务暂时不可用，请稍后重试';
-          }
+            statusText.textContent = '照片已通过手掌校验，可以开始生成报告';
+          });
         };
         reader.readAsDataURL(file);
       });
@@ -225,18 +248,10 @@
           return;
         }
 
-        if (!imageValidated) {
-          try {
-            const validation = await validatePalmImage(imageData);
-            if (!validation.accepted) {
-              statusText.textContent = validation.reason || '请输入手相图片';
-              return;
-            }
-            imageValidated = true;
-          } catch (error) {
-            statusText.textContent = '识别服务暂时不可用，请稍后重试';
-            return;
-          }
+        const valid = await validatePalmImage(imageData);
+        if (!valid) {
+          statusText.textContent = '仅支持手掌照片，请重新上传';
+          return;
         }
 
         submitButton.disabled = true;
@@ -247,7 +262,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              userId: localStorage.getItem(USER_KEY),
+              userId: await ensureUserId(),
               recordMode: 'quick',
               imageData,
               recordDate: recordDateInput.value
@@ -282,6 +297,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recordId: String(currentRecordId),
+              userId: await ensureUserId(),
               userNote: String(noteInput.value || '').trim() || ' '
             })
           });

@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Palmistry AI - 描绘你的手相密码</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script src="../vendor/tailwind-play.js"></script>
   <style>
     :root {
       --bg-1: #0a0f1e;
@@ -153,9 +153,24 @@
       const USER_KEY = "palmistry.userId";
       const query = new URLSearchParams(window.location.search);
       const recordFlow = query.get("recordFlow") || "single";
-      if (!localStorage.getItem(USER_KEY)) {
-        localStorage.setItem(USER_KEY, "guest-demo");
-      }
+
+      // 向服务端签发/续用身份: 服务端会校验旧身份, 无效则签发新的。
+      const ensureUserId = async () => {
+        let uid = localStorage.getItem(USER_KEY) || "";
+        try {
+          const response = await fetch(API_BASE + "/user/identity" + (uid ? "?previous=" + encodeURIComponent(uid) : ""));
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.userId) {
+              uid = data.userId;
+              localStorage.setItem(USER_KEY, uid);
+            }
+          }
+        } catch (error) {
+          // 离线或服务不可用时沿用本地身份。
+        }
+        return uid;
+      };
 
       const lineConfigs = {
         lifeLine: {
@@ -395,57 +410,135 @@
         };
       };
 
-      const resizeImageDataUrl = (dataUrl, maxSide = 1024, quality = 0.78) => new Promise((resolve) => {
-        const image = new Image();
-        image.onload = () => {
-          const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(image.width * scale));
-          canvas.height = Math.max(1, Math.round(image.height * scale));
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve(dataUrl);
-            return;
+      const showRejectionLink = () => {
+        if (document.getElementById("recaptureLink")) {
+          return;
+        }
+        const link = document.createElement("a");
+        link.id = "recaptureLink";
+        link.href = "../light_2/code.html";
+        link.textContent = "重新拍照";
+        link.className = "ml-2 underline text-pink-200";
+        submitStatus.insertAdjacentElement("afterend", link);
+      };
+
+      const removeRejectionLink = () => {
+        const link = document.getElementById("recaptureLink");
+        if (link) {
+          link.remove();
+        }
+      };
+
+      // 解析 SSE 流（fetch POST + ReadableStream），返回 done 事件携带的完整结果。
+      const analyzeViaStream = async (body) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 150000);
+        try {
+          const response = await fetch(API_BASE + "/palm/analyze/stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          });
+          const contentType = response.headers.get("Content-Type") || "";
+          if (!response.ok || !contentType.includes("text/event-stream")) {
+            return null; // 服务端不支持流式时回退到普通 POST
           }
-          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", quality));
-        };
-        image.onerror = () => resolve(dataUrl);
-        image.src = dataUrl;
-      });
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let donePayload = null;
+          while (true) {
+            const chunk = await reader.read();
+            if (chunk.done) {
+              break;
+            }
+            buffer += decoder.decode(chunk.value, { stream: true });
+            let boundary;
+            while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+              const rawEvent = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              let eventName = "message";
+              let dataText = "";
+              for (const line of rawEvent.split("\n")) {
+                if (line.startsWith("event:")) {
+                  eventName = line.slice(6).trim();
+                } else if (line.startsWith("data:")) {
+                  dataText += line.slice(5).trim();
+                }
+              }
+              if (!dataText) {
+                continue;
+              }
+              const payload = JSON.parse(dataText);
+              if (eventName === "stage") {
+                submitStatus.textContent = payload.message || "正在分析...";
+              } else if (eventName === "progress") {
+                submitStatus.textContent = "正在生成专属解读...（已生成 " + payload.generatedChars + " 字）";
+              } else if (eventName === "done") {
+                donePayload = payload;
+              } else if (eventName === "error") {
+                const error = new Error(payload.message || "生成失败");
+                error.code = payload.code;
+                throw error;
+              }
+            }
+          }
+          return donePayload;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
+
+      const classifyAnalyzeError = (error) => {
+        if (error && error.code === "IMAGE_REJECTED") {
+          return "这张照片不像手掌正面，请重新拍摄一张光线充足的手掌照片。";
+        }
+        if (error && error.name === "AbortError") {
+          return "生成超时了，请检查网络后重试。";
+        }
+        return "生成失败，请稍后重试";
+      };
 
       const submitAnalyze = async (withTraces) => {
-        submitStatus.textContent = "正在生成你的专属报告...";
         confirmButton.disabled = true;
         skipButton.disabled = true;
         clearCurrentButton.disabled = true;
+        removeRejectionLink();
+        submitStatus.textContent = recordFlow === "weekly"
+          ? "正在保存本周记录..."
+          : "阶段 1/3 · 正在量化掌纹特征...";
 
         try {
           localStorage.removeItem(ANALYZE_ERROR_KEY);
-          const submitImageData = await resizeImageDataUrl(imageData);
-          let response;
+          let payload = null;
           if (recordFlow === "weekly") {
             const weeklyBody = {
-              userId: localStorage.getItem(USER_KEY),
+              userId: await ensureUserId(),
               recordMode: withTraces ? "full" : "quick",
-              imageData: submitImageData,
+              imageData,
               recordDate: new Date().toISOString().slice(0, 10)
             };
             if (withTraces) {
               weeklyBody.traces = exportTraces();
               localStorage.setItem(TRACE_KEY, JSON.stringify(weeklyBody.traces));
             }
-            response = await fetch(API_BASE + "/record/weekly", {
+            const response = await fetch(API_BASE + "/record/weekly", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(weeklyBody)
             });
+            if (!response.ok) {
+              throw new Error("analyze failed");
+            }
+            payload = await response.json();
           } else {
             const body = {
               source: "camera",
               handSide: "left",
               gender: "unknown",
-              imageData: submitImageData,
+              imageData,
               recordMode: "single"
             };
             if (withTraces) {
@@ -454,19 +547,39 @@
             } else {
               localStorage.removeItem(TRACE_KEY);
             }
-            response = await fetch(API_BASE + "/palm/analyze", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body)
-            });
+            // 流式接口：stage/progress 事件实时呈现真实进度；不支持时自动回退普通 POST。
+            payload = await analyzeViaStream(body);
+            if (!payload) {
+              const response = await fetch(API_BASE + "/palm/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+              });
+              if (!response.ok) {
+                let message = "生成失败，请稍后重试";
+                try {
+                  const errorPayload = await response.json();
+                  if (response.status === 422) {
+                    submitStatus.textContent = classifyAnalyzeError({ code: "IMAGE_REJECTED" });
+                    showRejectionLink();
+                    confirmButton.disabled = false;
+                    skipButton.disabled = false;
+                    clearCurrentButton.disabled = false;
+                    return;
+                  }
+                  if (errorPayload && errorPayload.message) {
+                    message = errorPayload.message;
+                  }
+                } catch (parseError) {
+                  // 保留默认提示
+                }
+                throw Object.assign(new Error(message), { code: "ANALYZE_HTTP_" + response.status });
+              }
+              payload = await response.json();
+            }
           }
 
-          if (!response.ok) {
-            throw new Error("analyze failed");
-          }
-
-          const payload = await response.json();
-          if (!payload || !payload.sessionId) {
+          if (!payload || !(payload.sessionId || payload.recordId)) {
             throw new Error("empty analyze payload");
           }
 
@@ -486,7 +599,14 @@
         } catch (error) {
           const errorText = String(error && error.message ? error.message : error);
           localStorage.setItem(ANALYZE_ERROR_KEY, errorText);
-          submitStatus.textContent = "生成失败，请稍后重试";
+          if (error && error.code === "IMAGE_REJECTED") {
+            submitStatus.textContent = "这张照片不像手掌正面，请重新拍摄一张光线充足的手掌照片。";
+            showRejectionLink();
+          } else if (error && error.name === "AbortError") {
+            submitStatus.textContent = "生成超时了，请检查网络后重试。";
+          } else {
+            submitStatus.textContent = "生成失败，请稍后重试";
+          }
           confirmButton.disabled = false;
           skipButton.disabled = false;
           clearCurrentButton.disabled = false;

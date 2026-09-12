@@ -1,5 +1,6 @@
 package com.palmistrylab.api.controller;
 
+import com.palmistrylab.api.service.ImageRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,6 +19,14 @@ public class ApiExceptionHandler {
     payload.put("code", "BAD_REQUEST");
     payload.put("message", ex.getMessage());
     return ResponseEntity.badRequest().body(payload);
+  }
+
+  @ExceptionHandler(ImageRejectedException.class)
+  public ResponseEntity<Map<String, Object>> handleImageRejected(ImageRejectedException ex) {
+    Map<String, Object> payload = new HashMap<>();
+    payload.put("code", "IMAGE_REJECTED");
+    payload.put("message", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(payload);
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

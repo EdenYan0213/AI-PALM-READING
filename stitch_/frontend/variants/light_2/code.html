@@ -5,14 +5,14 @@
 <head>
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap"
+  <script src="../vendor/tailwind-play.js"></script>
+  <link href="https://fonts.loli.net/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap"
     rel="stylesheet" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    href="https://fonts.loli.net/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
     rel="stylesheet" />
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    href="https://fonts.loli.net/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
     rel="stylesheet" />
   <script id="tailwind-config">
     tailwind.config = {
@@ -228,7 +228,27 @@
             const reportCacheKey = 'palmistry.singleReport';
             const analyzeErrorKey = 'palmistry.analyzeError';
             const traceKey = 'palmistry.tracePayload';
+            const consentKey = 'palmistry.privacyConsent';
             let cameraStream = null;
+
+            const ensurePrivacyConsent = () => {
+              if (localStorage.getItem(consentKey) === 'yes') {
+                return true;
+              }
+              const agreed = window.confirm(
+                '上传前请知悉：\n\n' +
+                '1. 你上传的手掌照片将用于本次 AI 手相分析；\n' +
+                '2. 内容由 AI 生成，仅供娱乐，不构成任何建议；\n' +
+                '3. 请上传自己的手掌，不要包含他人肖像或其他敏感信息。\n\n' +
+                '点击「确定」即表示你已阅读并同意以上说明。'
+              );
+              if (agreed) {
+                localStorage.setItem(consentKey, 'yes');
+              } else {
+                setStatus('需同意上述说明后才能继续，你也可以退出页面。', false);
+              }
+              return agreed;
+            };
 
             const setStatus = (message, isError) => {
               cameraStatus.textContent = message;
@@ -242,6 +262,31 @@
               const min = Math.min(r, g, b);
               return r > 95 && g > 40 && b > 20 && (max - min) > 15 && Math.abs(r - g) > 15 && r > g && r > b;
             };
+
+            // 客户端压缩：长边压到 maxSide 以内（视觉模型足够用），体积降 80%+，
+            // 避免 base64 大图撑爆 localStorage 配额与上传带宽。
+            const compressDataUrl = (dataUrl, maxSide, quality) => new Promise((resolve) => {
+              const image = new Image();
+              image.onload = () => {
+                const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                  resolve(dataUrl);
+                  return;
+                }
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                try {
+                  resolve(canvas.toDataURL('image/jpeg', quality));
+                } catch (error) {
+                  resolve(dataUrl);
+                }
+              };
+              image.onerror = () => resolve(dataUrl);
+              image.src = dataUrl;
+            });
 
             const validatePalmImage = (dataUrl) => new Promise((resolve) => {
               const image = new Image();
@@ -348,12 +393,32 @@
             };
 
             const saveCapture = async (dataUrl, meta) => {
-              localStorage.setItem(captureKey, String(dataUrl));
-              localStorage.setItem(captureMetaKey, JSON.stringify(meta));
+              // 先清旧键释放配额，再保存；配额不足时逐级压缩重试。
               localStorage.removeItem(reportCacheKey);
               localStorage.removeItem(analyzeErrorKey);
               localStorage.removeItem(traceKey);
-              photoPreview.src = String(dataUrl);
+              let stored = String(dataUrl);
+              try {
+                localStorage.setItem(captureKey, stored);
+              } catch (quotaError) {
+                let saved = false;
+                for (const [side, quality] of [[960, 0.7], [720, 0.6]]) {
+                  try {
+                    stored = await compressDataUrl(stored, side, quality);
+                    localStorage.setItem(captureKey, stored);
+                    saved = true;
+                    break;
+                  } catch (retryError) {
+                    // 继续尝试更小尺寸
+                  }
+                }
+                if (!saved) {
+                  setStatus('照片过大，本地存储空间不足，请换一张照片重试。', true);
+                  return;
+                }
+              }
+              localStorage.setItem(captureMetaKey, JSON.stringify(meta));
+              photoPreview.src = stored;
               photoPreviewWrap.classList.remove('hidden');
               window.location.href = '../ai..._light/code.html?source=' + encodeURIComponent(meta.source || 'photo');
             };
@@ -387,17 +452,24 @@
                 return;
               }
 
+              const sourceW = cameraPreview.videoWidth;
+              const sourceH = cameraPreview.videoHeight;
+              const scale = Math.min(1, 1280 / Math.max(sourceW, sourceH));
               const canvas = document.createElement('canvas');
-              canvas.width = cameraPreview.videoWidth;
-              canvas.height = cameraPreview.videoHeight;
+              canvas.width = Math.max(1, Math.round(sourceW * scale));
+              canvas.height = Math.max(1, Math.round(sourceH * scale));
               const ctx = canvas.getContext('2d');
               if (!ctx) {
                 setStatus('摄像头暂时不可用，请改用相册上传。', true);
                 return;
               }
 
+              if (!ensurePrivacyConsent()) {
+                return;
+              }
+
               ctx.drawImage(cameraPreview, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
               const valid = await validatePalmImage(dataUrl);
               if (!valid) {
                 setStatus('这张照片不像手掌，请重新拍摄一张手掌正面照片。', true);
@@ -424,16 +496,21 @@
 
               const reader = new FileReader();
               reader.onload = () => {
-                const dataUrl = reader.result;
-                validatePalmImage(String(dataUrl)).then((valid) => {
-                  if (!valid) {
-                    setStatus('这张图片不像手掌，请上传手掌正面照片。', true);
-                    localStorage.removeItem(captureKey);
-                    localStorage.removeItem(captureMetaKey);
-                    return;
-                  }
-                  setStatus('手掌识别通过，正在进入分析页...');
-                  saveCapture(String(dataUrl), { name: file.name, type: file.type, size: file.size, source: 'album' });
+                if (!ensurePrivacyConsent()) {
+                  return;
+                }
+                // 相册原图可能好几 MB：先压缩再校验/保存。
+                compressDataUrl(String(reader.result), 1280, 0.82).then((dataUrl) => {
+                  validatePalmImage(dataUrl).then((valid) => {
+                    if (!valid) {
+                      setStatus('这张图片不像手掌，请上传手掌正面照片。', true);
+                      localStorage.removeItem(captureKey);
+                      localStorage.removeItem(captureMetaKey);
+                      return;
+                    }
+                    setStatus('手掌识别通过，正在进入分析页...');
+                    saveCapture(dataUrl, { name: file.name, type: file.type, size: file.size, source: 'album' });
+                  });
                 });
               };
               reader.readAsDataURL(file);
