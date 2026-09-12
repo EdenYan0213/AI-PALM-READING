@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Palmistry AI - 描绘你的手相密码</title>
+  <style>
+    :root {
+      --bg-1: #0a0f1e;
+      --bg-2: #121a33;
+      --panel: rgba(8, 14, 30, 0.52);
+      --line-life-a: #ff6f61;
+      --line-life-b: #ff9e2a;
+      --line-wisdom-a: #3ea7ff;
+      --line-wisdom-b: #3ef3f7;
+      --line-love-a: #ff4db8;
+      --line-love-b: #9f7bff;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: #ecf4ff;
+      font-family: "Plus Jakarta Sans", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(71, 129, 255, 0.25), transparent 44%),
+        radial-gradient(circle at 90% 88%, rgba(255, 86, 170, 0.22), transparent 48%),
+        linear-gradient(180deg, var(--bg-1), var(--bg-2));
+    }
+
+    .grid-overlay {
+      background-image:
+        linear-gradient(rgba(146, 176, 255, 0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(146, 176, 255, 0.15) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+
+    .star-dash {
+      stroke-dasharray: 2 10;
+      animation: dash-move 3.5s linear infinite;
+    }
+
+    @keyframes dash-move {
+      to {
+        stroke-dashoffset: -260;
+      }
+    }
+
+    .line-chip {
+      border: 1px solid rgba(150, 180, 255, 0.36);
+      background: rgba(11, 18, 38, 0.62);
+      color: rgba(228, 240, 255, 0.88);
+    }
+
+    .line-chip.active {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset, 0 8px 28px rgba(58, 124, 255, 0.35);
+      transform: translateY(-2px);
+    }
+
+    .cta-sticky {
+      backdrop-filter: blur(12px);
+      background: linear-gradient(180deg, rgba(12, 18, 38, 0.65), rgba(12, 18, 38, 0.9));
+      border-top: 1px solid rgba(170, 192, 255, 0.28);
+    }
+
+    .meta-point {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(230, 240, 255, 0.66);
+      box-shadow: 0 0 18px rgba(126, 186, 255, 0.65);
+      background: rgba(191, 224, 255, 0.36);
+      position: absolute;
+    }
+  </style>
+</head>
+
+<body>
+  <header class="px-5 pt-5 pb-3 max-w-3xl mx-auto">
+    <div class="flex items-center justify-between">
+      <a href="/scanning.html"
+        class="inline-flex items-center gap-1 rounded-full border border-blue-200/35 bg-white/10 px-3 py-2 text-xs text-blue-50 hover:bg-white/15 transition-colors"
+        aria-label="返回分析页">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+        返回
+      </a>
+      <h1 class="text-lg sm:text-xl font-semibold tracking-wide">描绘你的手相密码</h1>
+      <button id="skipButton" class="text-xs sm:text-sm text-blue-100/85 hover:text-white underline underline-offset-4">跳过描绘，直接查看</button>
+    </div>
+    <p class="mt-3 text-sm leading-6 text-blue-100/90">
+      你的掌纹密码，终究只有你亲手能解开。<br />
+      AI已经看出了大概，但最准的部分，还得你用手指来确认。<br />
+      让我们一起，把属于你的命运线描出来。
+    </p>
+  </header>
+
+  <main class="relative px-4 pb-40 max-w-3xl mx-auto">
+    <section class="relative rounded-3xl overflow-hidden border border-blue-200/25 shadow-[0_18px_48px_rgba(8,14,30,0.55)]">
+      <img id="palmImage" alt="Palm" class="w-full h-[62vh] min-h-[420px] object-cover" />
+      <div class="absolute inset-0 grid-overlay opacity-45"></div>
+      <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#060b1b]/38"></div>
+
+      <svg id="guideSvg" class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 1400" preserveAspectRatio="none">
+        <path id="guidePath" class="star-dash" d="" fill="none" stroke="rgba(255,146,146,0.78)" stroke-width="5" stroke-linecap="round"></path>
+      </svg>
+
+      <div id="metaAnchors" class="absolute inset-0 pointer-events-none">
+        <div class="meta-point" style="left: 20%; top: 66%;"></div>
+        <div class="meta-point" style="left: 44%; top: 86%;"></div>
+        <div class="meta-point" style="left: 68%; top: 44%;"></div>
+      </div>
+
+      <canvas id="traceCanvas" class="absolute inset-0 w-full h-full touch-none"></canvas>
+
+      <div class="absolute left-4 right-4 top-4 rounded-2xl px-4 py-3 bg-[#0d1530]/72 border border-blue-200/25">
+        <p id="guideHint" class="text-sm text-blue-50">跟着光的指引，用指尖描摹你的生命线。</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="fixed bottom-0 left-0 right-0 cta-sticky px-4 pt-3 pb-5">
+    <div class="max-w-3xl mx-auto space-y-3">
+      <div class="grid grid-cols-3 gap-2" id="lineTabs">
+        <button data-line="lifeLine" class="line-chip active rounded-full px-2 py-2 text-xs sm:text-sm">生命线（红）</button>
+        <button data-line="wisdomLine" class="line-chip rounded-full px-2 py-2 text-xs sm:text-sm">智慧线（蓝）</button>
+        <button data-line="loveLine" class="line-chip rounded-full px-2 py-2 text-xs sm:text-sm">感情线（紫）</button>
+      </div>
+
+      <div class="flex items-center justify-between gap-3">
+        <button id="clearCurrentButton" class="px-4 py-2 rounded-full text-xs sm:text-sm border border-blue-200/35 text-blue-50 hover:bg-blue-200/10">清除重画当前线</button>
+        <span id="progressText" class="text-xs sm:text-sm text-blue-100/85">已完成 0 / 3</span>
+      </div>
+
+      <button id="confirmButton" class="w-full py-3.5 rounded-full font-semibold text-sm sm:text-base bg-gradient-to-r from-fuchsia-500 via-pink-500 to-orange-400 text-white disabled:opacity-45 hidden" disabled>
+        解锁深度解读（看广告）
+      </button>
+      <p id="submitStatus" class="text-center text-xs text-blue-100/80"></p>
+    </div>
+  </div>
+
+  <script type="module" src="/src/pages/trace/main.js"></script>
+</body>
+
+</html>

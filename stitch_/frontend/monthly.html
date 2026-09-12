@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>月度能量月相图</title>
+  <style>
+    body {
+      background:
+        radial-gradient(circle at 10% 0%, rgba(164, 143, 255, 0.34), transparent 35%),
+        radial-gradient(circle at 100% 100%, rgba(79, 202, 255, 0.22), transparent 40%),
+        #090f20;
+      color: #e9f1ff;
+    }
+
+    .panel {
+      background: rgba(12, 20, 44, 0.62);
+      border: 1px solid rgba(141, 166, 255, 0.32);
+      backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen pb-24">
+  <main class="max-w-3xl mx-auto px-5 py-6 space-y-5">
+    <header class="panel rounded-3xl p-5">
+      <div class="flex items-center justify-between gap-3">
+        <a href="/calendar.html"
+          class="inline-flex items-center gap-1 rounded-full border border-indigo-300/40 bg-white/10 px-3 py-2 text-xs text-indigo-100 hover:bg-white/15 transition-colors"
+          aria-label="返回手相日历">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+          返回
+        </a>
+        <p class="text-xs text-indigo-200">Monthly Energy Orbit</p>
+      </div>
+      <h1 class="text-2xl font-semibold text-indigo-100 mt-1">月度能量月相图</h1>
+      <p id="subtitle" class="text-sm text-indigo-200/90 mt-2">正在读取本月能量轨迹...</p>
+    </header>
+
+    <section class="panel rounded-3xl p-5">
+      <svg id="orbitSvg" viewBox="0 0 360 360" class="w-full max-w-md mx-auto"></svg>
+      <p id="dominantText" class="text-center mt-3 text-indigo-100 font-semibold"></p>
+      <p id="reportText" class="text-sm text-indigo-100/85 mt-3 leading-7"></p>
+    </section>
+
+    <section class="panel rounded-3xl p-5">
+      <h3 class="text-sm font-semibold text-indigo-100">分享提示</h3>
+      <p class="text-sm text-indigo-100/80 mt-2">分享你的能量月相到朋友圈，截图发给大师，获取下月能量预言。</p>
+      <div class="mt-3">
+        <button id="shareCardButton" class="w-full py-2 rounded-full bg-fuchsia-500 text-white font-semibold">一键生成分享卡片</button>
+        <a id="downloadCardLink" href="#" download="monthly-energy-card.png"
+          class="mt-2 hidden w-full text-center py-2 rounded-full border border-indigo-300/40 text-indigo-100">下载分享卡片</a>
+        <p id="shareStatusText" class="text-xs text-indigo-200/85 mt-2"></p>
+      </div>
+      <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <a href="/calendar.html" class="text-center py-2 rounded-full bg-indigo-600 text-white">返回手相日历</a>
+        <a href="/home.html" class="text-center py-2 rounded-full border border-indigo-300/40 text-indigo-100">返回首页</a>
+      </div>
+    </section>
+
+    <canvas id="shareCanvas" width="1080" height="1440" class="hidden"></canvas>
+  </main>
+
+  <script type="module" src="/src/pages/monthly/main.js"></script>
+</body>
+
+</html>

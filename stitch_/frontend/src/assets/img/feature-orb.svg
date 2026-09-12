@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="藏经阁">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#31202c"/>
+      <stop offset="100%" stop-color="#0f0a14"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f9a8d4"/>
+      <stop offset="100%" stop-color="#c4b5fd"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" fill="url(#bg)"/>
+  <g fill="none" stroke="url(#glow)" stroke-linecap="round">
+    <circle cx="100" cy="86" r="34" stroke-width="5" opacity="0.9"/>
+    <path d="M100 52 L100 34 M72 62 L60 50 M128 62 L140 50" stroke-width="4" opacity="0.8"/>
+    <path d="M76 92 C88 84 112 84 124 92" stroke-width="3" opacity="0.7"/>
+  </g>
+  <g fill="#f9a8d4" opacity="0.55">
+    <rect x="52" y="140" width="96" height="8" rx="4"/>
+    <rect x="62" y="156" width="76" height="6" rx="3" opacity="0.7"/>
+    <rect x="72" y="170" width="56" height="5" rx="2.5" opacity="0.5"/>
+  </g>
+</svg>

@@ -201,11 +201,11 @@
     <section class="hero">
       <div>
         <h1 class="title">赛博手相 · 实时指标看板</h1>
-        <p class="sub">读取 <code>/api/v1/metrics/summary</code>，用于观察分享率、广告解锁率、私域转化等核心指标。</p>
+        <p class="sub">读取 <code>/api/v1/metrics/summary</code>，用于观察分享率、广告解锁率、私域转化等核心指标。接口受访问令牌保护。</p>
       </div>
       <div class="actions">
         <button id="refreshBtn" class="btn primary">刷新数据</button>
-        <a href="./index.html" class="btn ghost">返回演示入口</a>
+        <a href="/index.html" class="btn ghost">返回演示入口</a>
       </div>
     </section>
 
@@ -281,69 +281,13 @@
       <aside class="card">
         <div class="kpi-label">Data Status</div>
         <p id="statusText" class="status">准备连接后端...</p>
-        <p class="status">默认接口地址：<code>http://localhost:8080/api/v1/metrics/summary</code></p>
-        <p class="status">如果后端端口变化，请修改页面脚本中的 <code>API_BASE</code>。</p>
+        <p class="status">接口地址与页面同源：<code>/api/v1/metrics/summary</code>。</p>
+        <p class="status">配置了 <code>app.admin.token</code> 时会提示输入访问令牌。</p>
       </aside>
     </section>
   </div>
 
-  <script>
-    (function () {
-      const API_BASE = 'http://localhost:8080/api/v1';
-      const refreshBtn = document.getElementById('refreshBtn');
-      const statusText = document.getElementById('statusText');
-
-      const $ = (id) => document.getElementById(id);
-
-      const clampRate = (num) => {
-        if (Number.isNaN(num)) return 0;
-        return Math.max(0, Math.min(100, num));
-      };
-
-      const bindRate = (value, textId, barId) => {
-        const rate = clampRate(Number(value || 0));
-        $(textId).textContent = rate.toFixed(2) + '%';
-        $(barId).style.width = rate + '%';
-      };
-
-      const render = (data) => {
-        $('kpiSingle').textContent = data.totalSingleAnalyze ?? 0;
-        $('kpiCp').textContent = data.totalCpAnalyze ?? 0;
-        $('kpiAd').textContent = data.totalAdUnlock ?? 0;
-        $('kpiWeekly').textContent = data.totalWeeklyRecord ?? 0;
-        $('kpiRare').textContent = data.totalRareMarkQuery ?? 0;
-
-        bindRate(data.adUnlockRate, 'rateAdText', 'rateAdBar');
-        bindRate(data.cpInitiateRate, 'rateCpText', 'rateCpBar');
-        bindRate(data.shareRate, 'rateShareText', 'rateShareBar');
-        bindRate(data.privateLeadRate, 'rateLeadText', 'rateLeadBar');
-      };
-
-      const load = async () => {
-        statusText.textContent = '正在拉取指标数据...';
-        statusText.className = 'status';
-
-        try {
-          const response = await fetch(API_BASE + '/metrics/summary');
-          if (!response.ok) {
-            throw new Error('HTTP ' + response.status);
-          }
-
-          const data = await response.json();
-          render(data);
-          statusText.textContent = '已连接后端，数据刷新成功';
-          statusText.className = 'status ok';
-        } catch (error) {
-          statusText.textContent = '连接失败：请确认 Spring Boot 已启动（dev/prod 任一环境）';
-          statusText.className = 'status err';
-        }
-      };
-
-      refreshBtn.addEventListener('click', load);
-      load();
-      setInterval(load, 15000);
-    })();
-  </script>
+  <script type="module" src="/src/pages/admin/main.js"></script>
 </body>
 
 </html>

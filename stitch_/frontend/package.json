@@ -1,0 +1,24 @@
+{
+  "name": "palmistry-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "手相研究所前端（Vite 多页应用，构建产物输出到 backend 静态资源目录）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.10",
+    "autoprefixer": "^10.4.20",
+    "material-symbols": "^0.47.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.3.5"
+  },
+  "dependencies": {
+    "@fontsource/plus-jakarta-sans": "^5.1.1"
+  }
+}

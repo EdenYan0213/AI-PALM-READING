@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+    }
+
+    .palm-guide-path {
+      stroke-dasharray: 10;
+      animation: dash 20s linear infinite;
+    }
+
+    @keyframes dash {
+      to {
+        stroke-dashoffset: 1000;
+      }
+    }
+
+    .camera-blur-bg {
+      filter: blur(8px) brightness(1.1);
+    }
+  </style>
+  <style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+
+<body class="bg-background text-on-background font-body-md min-h-screen overflow-hidden flex flex-col">
+  <!-- Top Navigation Bar (Shared Component Strategy) -->
+  <header
+    class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-full mt-4 mx-6 border border-white/60 dark:border-white/10 shadow-[0_0_15px_rgba(250,218,221,0.3)]">
+    <a href="/home.html"
+      class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
+      aria-label="返回首页">
+      <span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+    </a>
+    <div class="flex items-center gap-2">
+      <span class="material-symbols-outlined text-pink-500" data-icon="auto_awesome">auto_awesome</span>
+      <span class="text-xl font-bold text-pink-500 italic tracking-tight font-headline-md">Palmistry AI</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <button class="p-2 text-pink-400 hover:opacity-80 transition-opacity active:scale-95 duration-300">
+        <span class="material-symbols-outlined" data-icon="flash_on">flash_on</span>
+      </button>
+      <button class="p-2 text-pink-400 hover:opacity-80 transition-opacity active:scale-95 duration-300">
+        <span class="material-symbols-outlined" data-icon="aspect_ratio">aspect_ratio</span>
+      </button>
+    </div>
+  </header>
+  <!-- Main Camera Viewport -->
+  <main class="relative flex-grow w-full h-full flex flex-col items-center justify-center pt-24 pb-40">
+    <!-- Simulated Camera Background -->
+    <div class="absolute inset-0 z-0">
+      <video id="cameraPreview" class="hidden w-full h-full object-cover camera-blur-bg" autoplay muted playsinline></video>
+      <img alt="Camera Preview" class="w-full h-full object-cover camera-blur-bg"
+        data-alt="Soft focused close-up of a human palm with warm, bright natural lighting and ethereal airy atmosphere"
+        src="/src/assets/img/palm-hero.svg" />
+      <div class="absolute inset-0 bg-white/10 backdrop-overlay"></div>
+    </div>
+    <input accept="image/*" capture="environment" class="hidden" id="photoInput" type="file" />
+    <!-- Instruction Header -->
+    <div
+      class="relative z-10 mb-8 px-6 py-3 bg-white/40 backdrop-blur-md rounded-full border border-white/60 shadow-sm">
+      <p class="text-primary font-headline-md text-label-md tracking-widest text-center">请将手掌对齐引导线</p>
+      <p class="text-[11px] text-primary/70 text-center mt-1">光线充足更精准，建议男左女右</p>
+    </div>
+    <p id="cameraStatus"
+      class="relative z-10 mb-3 px-4 py-2 rounded-full bg-white/50 backdrop-blur-md border border-white/60 text-xs text-pink-700 shadow-sm">
+      点击中间按钮打开相机，或用左侧按钮上传相册照片。
+    </p>
+    <div
+      class="relative z-10 mb-4 w-[280px] rounded-[28px] border border-white/70 bg-white/60 backdrop-blur-md overflow-hidden shadow-lg hidden"
+      id="photoPreviewWrap">
+      <img id="photoPreview" alt="Selected palm photo preview" class="w-full h-48 object-cover" />
+      <div class="p-3 text-center text-sm text-primary/80">已选择照片，可继续分析</div>
+    </div>
+    <!-- Palm Guide Overlay -->
+    <div class="relative z-10 w-full max-w-[320px] aspect-[3/4] flex items-center justify-center">
+      <!-- White Outline Guide -->
+      <svg class="w-full h-full drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] opacity-80" fill="none"
+        viewbox="0 0 200 250" xmlns="http://www.w3.org/2000/svg">
+        <path class="palm-guide-path"
+          d="M40 220C40 220 20 180 20 140C20 100 40 70 40 70M40 70C40 70 35 40 45 35C55 30 65 50 65 70M65 70C65 70 65 30 75 25C85 20 95 35 95 70M95 70C95 70 95 20 105 15C115 10 125 25 125 70M125 70C125 70 130 35 140 35C150 35 155 55 155 85C155 115 145 180 145 180M145 180C145 180 170 185 175 160M40 220C40 220 50 240 100 240C150 240 145 180 145 180"
+          stroke="white" stroke-linecap="round" stroke-width="2.5"></path>
+        <!-- Scanning Scanning Points -->
+        <circle class="animate-pulse" cx="70" cy="120" fill="white" r="2"></circle>
+        <circle class="animate-pulse" cx="100" cy="110" fill="white" r="2" style="animation-delay: 0.5s"></circle>
+        <circle class="animate-pulse" cx="130" cy="130" fill="white" r="2" style="animation-delay: 1s"></circle>
+      </svg>
+    </div>
+  </main>
+  <!-- Bottom Controls Area -->
+  <div class="fixed bottom-0 left-0 w-full z-50 px-8 pb-12 pt-6 flex flex-col items-center gap-8">
+    <!-- Photo Actions -->
+    <div class="w-full flex items-center justify-between max-w-sm">
+      <!-- Album Entry -->
+      <button
+        class="w-12 h-12 rounded-xl bg-white/30 backdrop-blur-md border border-white/40 overflow-hidden flex items-center justify-center hover:bg-white/50 transition-all active:scale-90 p-0"
+        id="pickAlbumButton" type="button">
+        <img alt="Gallery" class="w-full h-full object-cover opacity-60"
+          data-alt="Small thumbnail of a dreamy artistic portrait with soft lighting"
+          src="/src/assets/img/feature-orb.svg" />
+      </button>
+      <!-- Shutter Button -->
+      <button class="relative group" id="startAnalyzeButton" type="button" aria-label="拍摄手掌照片">
+        <div class="absolute -inset-4 bg-pink-200/30 rounded-full blur-xl group-hover:bg-pink-300/40 transition-all">
+        </div>
+        <div
+          class="relative w-20 h-20 rounded-full bg-white border-[6px] border-pink-100 p-1 flex items-center justify-center shadow-lg active:scale-90 transition-transform duration-300">
+          <div class="w-full h-full rounded-full bg-gradient-to-tr from-pink-400 to-pink-300 shadow-inner"></div>
+        </div>
+      </button>
+      <!-- Back/Switch Button -->
+      <button
+        class="w-12 h-12 rounded-full bg-white/30 backdrop-blur-md border border-white/40 flex items-center justify-center text-pink-500 hover:bg-white/50 transition-all active:scale-90"
+        type="button" aria-label="关闭摄像头" title="关闭摄像头">
+        <span class="material-symbols-outlined" data-icon="cached">cached</span>
+      </button>
+    </div>
+    <!-- Navigation Placeholder (Integrated Style) -->
+    <nav
+      class="w-full max-w-md bg-white/40 backdrop-blur-2xl rounded-full border border-white/40 shadow-[0_-8px_30px_rgba(250,218,221,0.2)] flex justify-around items-center px-4 py-3">
+      <a class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors"
+        href="/home.html">
+        <span class="material-symbols-outlined text-[24px]" data-icon="temple_hindu">temple_hindu</span>
+        <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold">灵地</span>
+      </a>
+      <button
+        class="flex flex-col items-center justify-center text-pink-600 drop-shadow-[0_0_8px_rgba(244,114,182,0.6)]">
+        <span class="material-symbols-outlined text-[24px]" data-icon="pan_tool_alt" data-weight="fill"
+          style="font-variation-settings: 'FILL' 1;">pan_tool_alt</span>
+        <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold">掌相</span>
+      </button>
+      <a class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors"
+        href="/report.html">
+        <span class="material-symbols-outlined text-[24px]" data-icon="auto_stories">auto_stories</span>
+        <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold">宿命</span>
+      </a>
+      <button class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors">
+        <span class="material-symbols-outlined text-[24px]" data-icon="auto_fix_high">auto_fix_high</span>
+        <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold">藏经</span>
+      </button>
+    </nav>
+  </div>
+  <!-- Decorative Elements -->
+  <div class="fixed top-1/4 -left-20 w-64 h-64 bg-pink-100/20 rounded-full blur-[100px] pointer-events-none"></div>
+  <div class="fixed bottom-1/4 -right-20 w-80 h-80 bg-blue-50/20 rounded-full blur-[100px] pointer-events-none"></div>
+  <script type="module" src="/src/pages/capture/main.js"></script>
+</body>
+
+</html>

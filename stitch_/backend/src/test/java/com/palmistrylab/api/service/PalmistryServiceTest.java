@@ -497,7 +497,7 @@ class PalmistryServiceTest {
 
   @Test
   void validatePalmImageFallsBackToHeuristicWhenAiUnavailable() throws Exception {
-    String imageData = loadImageDataUri(Path.of("src/main/resources/static/light_1/screen.png"));
+    String imageData = loadImageDataUri(Path.of("src/test/resources/fixtures/not-a-palm.png"));
 
     ApiDtos.PalmImageValidationResponse response = palmistryService.validatePalmImage(imageData);
 

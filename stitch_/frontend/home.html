@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>手相研究所 · 首页</title>
+    <style>
+        body {
+            background-color: #fff8f7;
+            background-image:
+                radial-gradient(at 0% 0%, rgba(250, 218, 221, 0.4) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(225, 225, 245, 0.3) 0px, transparent 50%);
+        }
+
+        .mystic-glow {
+            box-shadow: 0 0 15px rgba(250, 218, 221, 0.4);
+        }
+    </style>
+    <style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+
+<body class="font-body-md text-on-surface min-h-screen pb-24">
+    <!-- Top Navigation Shell -->
+    <header
+        class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-2 bg-white/40 backdrop-blur-xl rounded-full mt-4 mx-6 border border-white/60 shadow-[0_0_15px_rgba(250,218,221,0.3)]">
+            <a class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/60 border border-white/70 text-pink-500 hover:bg-white/80 active:scale-95 transition-all"
+                href="/index.html" aria-label="返回入口">
+                <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+            </a>
+        <div
+            class="flex items-center gap-2 text-pink-500 italic text-xl font-bold font-['Plus_Jakarta_Sans'] tracking-tight">
+            <span class="material-symbols-outlined" data-icon="auto_awesome">auto_awesome</span>
+            <span>Palmistry AI</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <button class="text-pink-400 hover:opacity-80 transition-opacity active:scale-95 duration-300">
+                <span class="material-symbols-outlined text-2xl" data-icon="account_circle">account_circle</span>
+            </button>
+        </div>
+    </header>
+    <main class="pt-28 px-container-margin">
+        <!-- Hero Section -->
+        <section class="flex flex-col items-center text-center mb-section-gap">
+            <div class="relative w-full aspect-square max-w-[320px] mb-8">
+                <div
+                    class="absolute inset-0 bg-gradient-to-tr from-primary-container/40 to-secondary-container/40 rounded-full blur-3xl opacity-60">
+                </div>
+                <img alt="赛博手相主视觉"
+                    class="w-full h-full object-cover rounded-full border-2 border-white/60 shadow-2xl relative z-10"
+                    src="/src/assets/img/palm-hero.svg" />
+                <div class="absolute -bottom-4 -right-4 glass-card p-3 rounded-2xl z-20 border-white/80">
+                    <span class="material-symbols-outlined text-pink-500 text-3xl" data-icon="flare">flare</span>
+                </div>
+            </div>
+            <h1 class="font-headline-lg text-headline-lg text-primary mb-4 px-4 leading-tight">
+                AI 识手相，解锁你的<br /><span class="text-pink-500">赛博命运说明书</span>
+            </h1>
+            <p class="font-body-md text-on-surface-variant max-w-[280px] mb-8">
+                融合东方玄学与尖端 AI 算法，揭示指缝间的生命奥秘。
+            </p>
+            <!-- Main Actions -->
+            <div class="w-full space-y-4 max-w-sm">
+                <a class="w-full py-4 px-6 rounded-full bg-primary-container text-primary font-headline-md text-headline-md shadow-[0_8px_20px_rgba(250,218,221,0.4)] flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                    href="/capture.html">
+                    <span class="material-symbols-outlined" data-icon="pan_tool_alt">pan_tool_alt</span>
+                    开始 AI 识手相
+                </a>
+                <a class="w-full py-4 px-6 rounded-full bg-white/70 border border-pink-100 text-pink-700 font-headline-md text-headline-md flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                    href="/weekly.html">
+                    <span class="material-symbols-outlined" data-icon="calendar_month">calendar_month</span>
+                    本周手相记录
+                </a>
+                <a class="w-full py-4 px-6 rounded-full glass-card text-on-secondary-container font-headline-md text-headline-md border-pink-200/50 flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                    href="/cp.html">
+                    <span class="material-symbols-outlined" data-icon="favorite">favorite</span>
+                    CP 合拍模式
+                </a>
+            </div>
+        </section>
+        <!-- Today's Fortune Bento -->
+        <section class="grid grid-cols-2 gap-4 mb-section-gap">
+            <div class="col-span-2 glass-card rounded-[32px] p-6 relative overflow-hidden">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="font-headline-md text-headline-md text-primary">今日运势</h3>
+                        <p id="todayText" class="text-on-surface-variant text-sm">· </p>
+                    </div>
+                    <div class="bg-primary/10 px-3 py-1 rounded-full text-primary font-label-md text-label-md">
+                        极佳
+                    </div>
+                </div>
+                <div class="flex gap-4 items-center">
+                    <div class="flex-1 space-y-3">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-on-surface-variant">事业</span>
+                            <div class="flex gap-0.5">
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-200 text-xs"
+                                    data-icon="star">star</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-on-surface-variant">财富</span>
+                            <div class="flex gap-0.5">
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-400 text-xs" data-icon="star"
+                                    style="font-variation-settings: 'FILL' 1;">star</span>
+                                <span class="material-symbols-outlined text-pink-200 text-xs"
+                                    data-icon="star">star</span>
+                                <span class="material-symbols-outlined text-pink-200 text-xs"
+                                    data-icon="star">star</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="w-px h-12 bg-outline-variant/30"></div>
+                    <div class="flex-1">
+                        <p class="text-sm text-primary leading-relaxed">
+                            今日指尖灵气充盈，适合开启新计划，宜社交、宜远行。
+                        </p>
+                    </div>
+                </div>
+                <!-- Decorative element -->
+                <div class="absolute -right-4 -bottom-4 opacity-10">
+                    <span class="material-symbols-outlined text-9xl" data-icon="temple_hindu">temple_hindu</span>
+                </div>
+            </div>
+            <!-- Bento Sub-cards -->
+            <div class="glass-card rounded-[24px] p-4 flex flex-col items-center text-center">
+                <div class="w-10 h-10 rounded-full bg-tertiary-container/50 flex items-center justify-center mb-2">
+                    <span class="material-symbols-outlined text-on-tertiary-container"
+                        data-icon="psychology">psychology</span>
+                </div>
+                <h4 class="font-label-md text-label-md mb-1">智慧分析</h4>
+                <p class="text-[10px] text-on-surface-variant">深度解析逻辑潜能</p>
+            </div>
+            <div class="glass-card rounded-[24px] p-4 flex flex-col items-center text-center">
+                <div class="w-10 h-10 rounded-full bg-secondary-container/50 flex items-center justify-center mb-2">
+                    <span class="material-symbols-outlined text-on-secondary-container"
+                        data-icon="timeline">timeline</span>
+                </div>
+                <h4 class="font-label-md text-label-md mb-1">事业曲线</h4>
+                <p class="text-[10px] text-on-surface-variant">精准预见职场起伏</p>
+            </div>
+        </section>
+        <!-- Feature Highlight -->
+        <section class="space-y-4">
+            <h2 class="font-headline-md text-headline-md text-center text-primary mb-6">灵动探索</h2>
+            <div class="flex flex-col gap-4">
+                <div class="glass-card p-5 rounded-[28px] flex items-center gap-4 border-l-4 border-l-pink-300">
+                    <div class="flex-shrink-0 w-14 h-14 rounded-2xl overflow-hidden shadow-inner">
+                        <img alt="藏经阁" class="w-full h-full object-cover" src="/src/assets/img/feature-orb.svg" />
+                    </div>
+                    <div>
+                        <h4 class="font-body-lg text-body-lg font-semibold text-primary">藏经阁</h4>
+                        <p class="text-sm text-on-surface-variant">沉淀千年的古法手相百科全书</p>
+                    </div>
+                    <span class="material-symbols-outlined ml-auto text-pink-300"
+                        data-icon="chevron_right">chevron_right</span>
+                </div>
+                <div
+                    class="glass-card p-5 rounded-[28px] flex items-center gap-4 border-l-4 border-l-secondary-fixed-dim">
+                    <div class="flex-shrink-0 w-14 h-14 rounded-2xl overflow-hidden shadow-inner">
+                        <img alt="宿命轮" class="w-full h-full object-cover" src="/src/assets/img/feature-wheel.svg" />
+                    </div>
+                    <div>
+                        <h4 class="font-body-lg text-body-lg font-semibold text-primary">宿命轮</h4>
+                        <p class="text-sm text-on-surface-variant">周期性的人生节点深度测算</p>
+                    </div>
+                    <span class="material-symbols-outlined ml-auto text-pink-300"
+                        data-icon="chevron_right">chevron_right</span>
+                </div>
+            </div>
+        </section>
+    </main>
+    <!-- Compliance Disclaimer -->
+    <div class="px-6 pb-24 pt-2 text-center">
+        <p class="text-[11px] leading-5 text-on-surface-variant/60 max-w-sm mx-auto">
+            本产品所有解读内容均由 AI 生成，仅供娱乐，不具有科学依据，<br />
+            不构成任何医疗、心理、投资或人生决策建议。未满 18 周岁请在监护人陪同下使用。
+        </p>
+    </div>
+    <!-- Bottom Navigation Shell -->
+    <nav
+        class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/40 backdrop-blur-2xl rounded-t-[32px] border-t border-white/40 shadow-[0_-8px_30px_rgba(250,218,221,0.2)]">
+        <a class="flex flex-col items-center justify-center text-pink-600 drop-shadow-[0_0_8px_rgba(244,114,182,0.6)] scale-110 duration-500 ease-out"
+            href="/home.html">
+            <span class="material-symbols-outlined" data-icon="temple_hindu">temple_hindu</span>
+            <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold mt-1">灵地</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors"
+            href="/capture.html">
+            <span class="material-symbols-outlined" data-icon="pan_tool_alt">pan_tool_alt</span>
+            <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold mt-1">掌相</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors"
+            href="/report.html">
+            <span class="material-symbols-outlined" data-icon="auto_stories">auto_stories</span>
+            <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold mt-1">宿命</span>
+        </a>
+        <a class="flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 transition-colors"
+            href="/cp.html">
+            <span class="material-symbols-outlined" data-icon="auto_fix_high">auto_fix_high</span>
+            <span class="font-['Plus_Jakarta_Sans'] text-[10px] font-semibold mt-1">藏经</span>
+        </a>
+    </nav>
+    <script type="module" src="/src/pages/home/main.js"></script>
+</body>
+
+</html>

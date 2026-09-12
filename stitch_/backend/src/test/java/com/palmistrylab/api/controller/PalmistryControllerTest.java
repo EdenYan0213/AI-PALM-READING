@@ -49,7 +49,7 @@ class PalmistryControllerTest {
 
   @Test
   void validateImageEndpointRejectsNonPalmImage() throws Exception {
-    String imageData = loadImageDataUri(Path.of("src/main/resources/static/light_1/screen.png"));
+    String imageData = loadImageDataUri(Path.of("src/test/resources/fixtures/not-a-palm.png"));
 
     mockMvc.perform(post("/api/v1/palm/validate-image")
             .contentType(MediaType.APPLICATION_JSON)
