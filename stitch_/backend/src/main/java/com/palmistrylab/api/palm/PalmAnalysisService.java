@@ -40,6 +40,8 @@ public class PalmAnalysisService {
   private final LlmClient llmClient;
   private final PerceptionClient perceptionClient;
   private final MetricsService metricsService;
+  private final TraceGeometryAnalyzer traceGeometryAnalyzer;
+  private final LocalPalmImageValidator localPalmImageValidator;
 
   /** 图哈希 → 分析结果缓存（TD §13.1：同图缓存命中即一致）。V0.2 迁移到 DB。 */
   private final InMemoryLruCache<String, PalmAnalyzeResponse> responseCache = new InMemoryLruCache<>(RESPONSE_CACHE_MAX);
@@ -52,13 +54,17 @@ public class PalmAnalysisService {
       PalmNarrativeWriter narrativeWriter,
       LlmClient llmClient,
       PerceptionClient perceptionClient,
-      MetricsService metricsService) {
+      MetricsService metricsService,
+      TraceGeometryAnalyzer traceGeometryAnalyzer,
+      LocalPalmImageValidator localPalmImageValidator) {
     this.sessionRecordRepository = sessionRecordRepository;
     this.palmSessionService = palmSessionService;
     this.narrativeWriter = narrativeWriter;
     this.llmClient = llmClient;
     this.perceptionClient = perceptionClient;
     this.metricsService = metricsService;
+    this.traceGeometryAnalyzer = traceGeometryAnalyzer;
+    this.localPalmImageValidator = localPalmImageValidator;
   }
 
   public PalmAnalyzeResponse analyzePalm(AnalyzePalmRequest request) {
@@ -101,12 +107,12 @@ public class PalmAnalysisService {
     String rareMark = pickRareMark(imageHash != null ? imageHash : sessionId);
     String teaser = "检测到稀有印记「" + rareMark + "」，完整解析可在报告页查询";
     TraceGeometryAnalyzer.TracePromptBundle tracePromptBundle =
-        TraceGeometryAnalyzer.buildTracePromptBundle(request.traces());
+        traceGeometryAnalyzer.buildTracePromptBundle(request.traces());
     boolean traceConfirmed = tracePromptBundle.confirmed();
     String traceFeatureSummary = tracePromptBundle.summaryText();
 
     if (traceConfirmed) {
-      freeOverview = TraceGeometryAnalyzer.buildOverviewFromFeatures(tracePromptBundle.features());
+      freeOverview = traceGeometryAnalyzer.buildOverviewFromFeatures(tracePromptBundle.features());
       teaser = "已根据你亲手描摹的掌纹生成解读，完整趋势可在报告页继续解锁。";
     }
     if (!"standard".equals(recordMode) && !"single".equals(recordMode)) {
@@ -159,7 +165,7 @@ public class PalmAnalysisService {
     sessionRecordRepository.save(new SessionRecordEntity(sessionId, "SINGLE", handType, rareMark, now));
     metricsService.recordEvent("single_analyze", sessionId, request.source());
 
-    PalmFeatureSet featureSet = buildFeatureSet(imageHash, perception, handType);
+    PalmFeatureSet featureSet = buildFeatureSet(imageHash, perception, handType, tracePromptBundle, rareMark);
     PalmAnalyzeResponse response = new PalmAnalyzeResponse(
         sessionId,
         handType,
@@ -262,7 +268,7 @@ public class PalmAnalysisService {
       }
     }
 
-    boolean accepted = LocalPalmImageValidator.looksLikePalm(imageData);
+    boolean accepted = localPalmImageValidator.looksLikePalm(imageData);
     String reason = accepted ? "通过本地兜底校验" : "这张图片不是手相，请上传清晰的手掌照片。";
     PalmImageValidationResponse response =
         new PalmImageValidationResponse(accepted, accepted ? 0.72 : 0.08, reason, "heuristic");
@@ -272,19 +278,36 @@ public class PalmAnalysisService {
     return response;
   }
 
-  /** 构建 PalmFeatureSet 契约（TD §4）：感知边车给出几何依据，降级时标注 heuristic_hash。 */
+  /**
+   * 构建 PalmFeatureSet 契约（TD §4 v1.1）：感知边车给出几何依据（降级时标注 heuristic_hash），
+   * lines 来自描摹轨迹的确定性几何特征（未描摹为空列表），marks 为图哈希确定性印记。
+   */
   private PalmFeatureSet buildFeatureSet(
-      String imageHash, PerceptionClient.PerceptionResult perception, String handType) {
+      String imageHash,
+      PerceptionClient.PerceptionResult perception,
+      String handType,
+      TraceGeometryAnalyzer.TracePromptBundle traceBundle,
+      String rareMark) {
     boolean fromPerception = perception != null && perception.detected();
     ShapeBasis basis = fromPerception
         ? new ShapeBasis(perception.palmRatio(), perception.fingerRatio())
         : null;
+    List<com.palmistrylab.api.palm.dto.FeatureLine> lines = traceBundle.features().stream()
+        .filter(TraceGeometryAnalyzer.LineTraceFeature::available)
+        .map(f -> new com.palmistrylab.api.palm.dto.FeatureLine(
+            f.lineName(), f.lengthLabel(), f.curvatureLabel(), f.continuityLabel(), f.forked(), f.eventLabel()))
+        .toList();
+    List<com.palmistrylab.api.palm.dto.FeatureMark> marks = rareMark == null
+        ? List.of()
+        : List.of(new com.palmistrylab.api.palm.dto.FeatureMark(rareMark, "deterministic_hash"));
     return new PalmFeatureSet(
-        "1.0",
+        "1.1",
         fromPerception ? "perception_sidecar" : "heuristic_hash",
         imageHash,
         new com.palmistrylab.api.palm.dto.PalmShapeFeature(handType, fromPerception ? 0.9 : null, basis),
-        new com.palmistrylab.api.palm.dto.QualityFeature(null, null, fromPerception && perception.retake()));
+        new com.palmistrylab.api.palm.dto.QualityFeature(null, null, fromPerception && perception.retake()),
+        lines,
+        marks);
   }
 
   private String pickHandType(String seed) {

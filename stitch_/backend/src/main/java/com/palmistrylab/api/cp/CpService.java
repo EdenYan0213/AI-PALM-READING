@@ -7,50 +7,83 @@ import com.palmistrylab.api.llm.LlmClient;
 import com.palmistrylab.api.metrics.MetricsService;
 import com.palmistrylab.api.palm.ContentGuardrail;
 import com.palmistrylab.api.palm.PalmNarrativeWriter;
+import com.palmistrylab.api.palm.PalmRules;
+import com.palmistrylab.api.palm.SessionRecordEntity;
 import com.palmistrylab.api.palm.PalmSessionService;
+import com.palmistrylab.api.palm.SessionRecordRepository;
 import com.palmistrylab.api.palm.dto.DeepSection;
+import com.palmistrylab.api.palm.dto.FeatureLine;
+import com.palmistrylab.api.palm.dto.PalmFeatureSet;
 import com.palmistrylab.api.palm.dto.UnlockDeepResponse;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
- * CP 合拍引擎（演示阶段）：分数为 MBTI 哈希确定性区间，叙事由 LLM 润色。
- * TD §4 的目标形态是读取双方 PalmFeatureSet 做规则匹配，待 FeatureSet 完整化后接入。
+ * CP 合拍引擎。
+ * 打分双轨：
+ * - 默认（无 FeatureSet）：MBTI 哈希确定性区间（演示）；
+ * - 双方传入 PalmFeatureSet 时：规则文件驱动的掌型亲和分 + 同名线几何相近度加分（TD §4）。
+ * 叙事均由 LLM 润色并过违禁词审查；阈值全部来自 palmistry-rules.yml。
  */
 @Service
 public class CpService {
 
   private final LlmClient llmClient;
   private final PalmSessionService palmSessionService;
-  private final com.palmistrylab.api.palm.SessionRecordRepository sessionRecordRepository;
+  private final SessionRecordRepository sessionRecordRepository;
   private final PalmNarrativeWriter narrativeWriter;
   private final MetricsService metricsService;
+  private final PalmRules rules;
 
   public CpService(
       LlmClient llmClient,
       PalmSessionService palmSessionService,
-      com.palmistrylab.api.palm.SessionRecordRepository sessionRecordRepository,
+      SessionRecordRepository sessionRecordRepository,
       PalmNarrativeWriter narrativeWriter,
-      MetricsService metricsService) {
+      MetricsService metricsService,
+      PalmRules rules) {
     this.llmClient = llmClient;
     this.palmSessionService = palmSessionService;
     this.sessionRecordRepository = sessionRecordRepository;
     this.narrativeWriter = narrativeWriter;
     this.metricsService = metricsService;
+    this.rules = rules;
   }
 
   public CpAnalyzeResponse analyzeCp(CpAnalyzeRequest request) {
     String cpSessionId = "CP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-    double score = buildCpScore(request.userA().mbti(), request.userB().mbti());
-    String combo = buildComboName(request.userA().handType(), request.userB().handType());
+    double score;
+    String combo;
+    if (request.featureA() != null && request.featureB() != null) {
+      score = featureBasedScore(request.featureA(), request.featureB());
+      combo = rules.cpCombo(shapeOf(request.featureA()), shapeOf(request.featureB()));
+    } else {
+      score = buildCpScore(request.userA().mbti(), request.userB().mbti());
+      combo = rules.cpCombo(request.userA().handType(), request.userB().handType());
+    }
 
-    List<CpDimension> dimensions = List.of(
-        new CpDimension("感情线趋同度", clamp((int) Math.round(score + 3))),
-        new CpDimension("智慧线互补性", clamp((int) Math.round(score - 4))),
-        new CpDimension("生活节奏契合度", clamp((int) Math.round(score - 1))));
+    List<CpDimension> dimensions = new ArrayList<>();
+    for (Map<String, Object> dimension : rules.cpDimensions()) {
+      Object offset = dimension.get("offset");
+      Object name = dimension.get("name");
+      if (name == null || !(offset instanceof Number offsetNumber)) {
+        continue;
+      }
+      dimensions.add(new CpDimension(
+          String.valueOf(name),
+          (int) clamp(score + offsetNumber.doubleValue())));
+    }
+    if (dimensions.isEmpty()) {
+      dimensions = List.of(new CpDimension("感情线趋同度", (int) clamp(score + 3)));
+    }
 
     String interpretation = "你们属于「" + combo + "」组合，一方负责搭框架，一方负责点亮细节。";
     String tip = "相处 Tips：当逻辑线遇上感性分叉时，先共识目标，再讨论路径。";
@@ -71,7 +104,7 @@ public class CpService {
 
     Instant now = Instant.now();
     palmSessionService.put(new PalmSessionService.SessionState(cpSessionId, combo, "双生螺旋", now));
-    sessionRecordSave(cpSessionId, combo, now);
+    sessionRecordRepository.save(new SessionRecordEntity(cpSessionId, "CP", combo, "双生螺旋", now));
     metricsService.recordEvent("cp_analyze", cpSessionId, "cp_page");
 
     return new CpAnalyzeResponse(cpSessionId, score, combo, dimensions, interpretation, tip);
@@ -93,30 +126,53 @@ public class CpService {
     return new UnlockDeepResponse(cpSessionId, true, "AD_REWARDED", sections);
   }
 
-  private void sessionRecordSave(String cpSessionId, String combo, Instant now) {
-    sessionRecordRepository.save(new com.palmistrylab.api.palm.SessionRecordEntity(cpSessionId, "CP", combo, "双生螺旋", now));
+  /** 特征亲和打分：掌型亲和分（规则表）+ 双方同名描线几何相近度加分（封顶）。 */
+  private double featureBasedScore(PalmFeatureSet featureA, PalmFeatureSet featureB) {
+    double affinity = rules.cpFeatureShapeAffinity(shapeOf(featureA), shapeOf(featureB));
+
+    Map<String, FeatureLine> linesB = featureB.lines() == null ? Map.of() : featureB.lines().stream()
+        .collect(Collectors.toMap(FeatureLine::lineName, Function.identity(), (a, b) -> a));
+    double bonus = 0.0;
+    double bonusMax = rules.cpFeatureLinesBonusMax();
+    if (featureA.lines() != null) {
+      for (FeatureLine lineA : featureA.lines()) {
+        FeatureLine lineB = linesB.get(lineA.lineName());
+        if (lineB == null) {
+          continue;
+        }
+        if (lineA.length().equals(lineB.length())) {
+          bonus += rules.cpFeatureSameLengthBonus();
+        }
+        if (lineA.curvature().equals(lineB.curvature())) {
+          bonus += rules.cpFeatureSameCurvatureBonus();
+        }
+        if (lineA.continuity().equals(lineB.continuity())) {
+          bonus += rules.cpFeatureSameContinuityBonus();
+        }
+        if (bonus >= bonusMax) {
+          bonus = bonusMax;
+          break;
+        }
+      }
+    }
+    return clamp(affinity + bonus);
+  }
+
+  private String shapeOf(PalmFeatureSet featureSet) {
+    if (featureSet == null || featureSet.palmShape() == null || featureSet.palmShape().type() == null) {
+      return "";
+    }
+    return featureSet.palmShape().type().replace("型手", "");
   }
 
   private double buildCpScore(String mbtiA, String mbtiB) {
     int hash = Math.abs((mbtiA + "-" + mbtiB).hashCode());
-    double score = 70 + (hash % 2900) / 100.0;
-    return Math.min(98.0, Math.max(70.0, score));
+    double score = rules.cpScoreMin() + (hash % rules.cpScoreHashRange()) / 100.0;
+    return clamp(score);
   }
 
-  private String buildComboName(String typeA, String typeB) {
-    if ("火型手".equals(typeA) && "水型手".equals(typeB)
-        || "水型手".equals(typeA) && "火型手".equals(typeB)) {
-      return "救赎文学组";
-    }
-    if ("风型手".equals(typeA) && "土型手".equals(typeB)
-        || "土型手".equals(typeA) && "风型手".equals(typeB)) {
-      return "现实智囊组";
-    }
-    return "理想主义组";
-  }
-
-  private int clamp(int value) {
-    return Math.max(70, Math.min(98, value));
+  private double clamp(double value) {
+    return Math.max(rules.cpScoreMin(), Math.min(rules.cpScoreMax(), value));
   }
 
   private LlmCpNarrative generateCpNarrative(CpAnalyzeRequest request, String comboName, double score) {

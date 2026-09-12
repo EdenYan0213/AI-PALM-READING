@@ -62,8 +62,10 @@ class PalmAnalysisServiceTest {
     PalmNarrativeWriter narrativeWriter = new PalmNarrativeWriter(client, new LoreService(), new ObjectMapper());
     MetricsService metricsService = new MetricsService(appEventRepository, sessionRecordRepository, palmRecordRepository);
     PerceptionClient perceptionClient = new PerceptionClient(new RestTemplateBuilder(), new ObjectMapper(), "");
+    PalmRules rules = new PalmRules();
     palmAnalysisService = new PalmAnalysisService(
-        sessionRecordRepository, palmSessionService, narrativeWriter, client, perceptionClient, metricsService);
+        sessionRecordRepository, palmSessionService, narrativeWriter, client, perceptionClient, metricsService,
+        new TraceGeometryAnalyzer(rules), new LocalPalmImageValidator(rules));
   }
 
   @Test
@@ -87,7 +89,12 @@ class PalmAnalysisServiceTest {
     assertThat(response.llmStatus()).isEqualTo("llm_disabled");
     assertThat(response.featureSet()).isNotNull();
     assertThat(response.featureSet().source()).isEqualTo("heuristic_hash");
+    assertThat(response.featureSet().version()).isEqualTo("1.1");
     assertThat(response.featureSet().palmShape().type()).isEqualTo(response.handType());
+    assertThat(response.featureSet().lines()).isEmpty();
+    assertThat(response.featureSet().marks()).hasSize(1);
+    assertThat(response.featureSet().marks().get(0).name()).isEqualTo(response.rareMark());
+    assertThat(response.featureSet().marks().get(0).source()).isEqualTo("deterministic_hash");
 
     ArgumentCaptor<SessionRecordEntity> sessionCaptor = ArgumentCaptor.forClass(SessionRecordEntity.class);
     verify(sessionRecordRepository).save(sessionCaptor.capture());
@@ -203,20 +210,25 @@ class PalmAnalysisServiceTest {
         .thenAnswer(invocation -> invocation.getArgument(0));
 
     String imageData = "data:image/png;base64,determinism-check";
+    PalmRules rules = new PalmRules();
     PalmAnalysisService serviceA = new PalmAnalysisService(
         sessionRecordRepository,
         new PalmSessionService(sessionRecordRepository),
         new PalmNarrativeWriter(llmClient, new LoreService(), new ObjectMapper()),
         llmClient,
         new PerceptionClient(new RestTemplateBuilder(), new ObjectMapper(), ""),
-        new MetricsService(appEventRepository, sessionRecordRepository, palmRecordRepository));
+        new MetricsService(appEventRepository, sessionRecordRepository, palmRecordRepository),
+        new TraceGeometryAnalyzer(rules),
+        new LocalPalmImageValidator(rules));
     PalmAnalysisService serviceB = new PalmAnalysisService(
         sessionRecordRepository,
         new PalmSessionService(sessionRecordRepository),
         new PalmNarrativeWriter(llmClient, new LoreService(), new ObjectMapper()),
         llmClient,
         new PerceptionClient(new RestTemplateBuilder(), new ObjectMapper(), ""),
-        new MetricsService(appEventRepository, sessionRecordRepository, palmRecordRepository));
+        new MetricsService(appEventRepository, sessionRecordRepository, palmRecordRepository),
+        new TraceGeometryAnalyzer(rules),
+        new LocalPalmImageValidator(rules));
 
     PalmAnalyzeResponse fromA = serviceA.analyzePalm(new AnalyzePalmRequest(
         "camera", "left", null, imageData, null, "standard"));

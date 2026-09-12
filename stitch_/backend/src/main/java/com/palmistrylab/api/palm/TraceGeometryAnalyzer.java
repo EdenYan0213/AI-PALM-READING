@@ -3,6 +3,7 @@ package com.palmistrylab.api.palm;
 import com.palmistrylab.api.palm.dto.PalmLineSummary;
 import com.palmistrylab.api.palm.dto.PalmLineTraces;
 import com.palmistrylab.api.palm.dto.TracePoint;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -13,15 +14,20 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 掌纹描摹轨迹的确定性几何解析（TD §4 量化层）：长度/弯曲度/连续性/分叉/事件。
- * 纯函数、无 IO，输出既喂给 LLM 提示词，也生成无模型时的兜底解读。
+ * 阈值全部来自 palmistry-rules.yml（PalmRules），纯几何、无 IO；
+ * 输出既喂给 LLM 提示词，也生成无模型时的兜底解读。
  */
-public final class TraceGeometryAnalyzer {
+@Component
+public class TraceGeometryAnalyzer {
 
-  private TraceGeometryAnalyzer() {
+  private final PalmRules rules;
+
+  public TraceGeometryAnalyzer(PalmRules rules) {
+    this.rules = rules;
   }
 
   /** 从描摹轨迹提取三条主线的几何特征，并组装进提示词块。 */
-  public static TracePromptBundle buildTracePromptBundle(PalmLineTraces traces) {
+  public TracePromptBundle buildTracePromptBundle(PalmLineTraces traces) {
     LineTraceFeature life = extractLineFeature("生命线", traces == null ? null : traces.lifeLine());
     LineTraceFeature wisdom = extractLineFeature("智慧线", traces == null ? null : traces.wisdomLine());
     LineTraceFeature love = extractLineFeature("感情线", traces == null ? null : traces.loveLine());
@@ -65,7 +71,7 @@ public final class TraceGeometryAnalyzer {
   }
 
   /** 无模型时的确定性兜底解读：直接按几何特征生成三条主线文案。 */
-  public static List<PalmLineSummary> buildOverviewFromFeatures(List<LineTraceFeature> features) {
+  public List<PalmLineSummary> buildOverviewFromFeatures(List<LineTraceFeature> features) {
     Map<String, LineTraceFeature> byName = new ConcurrentHashMap<>();
     for (LineTraceFeature feature : features) {
       byName.put(feature.lineName(), feature);
@@ -77,7 +83,7 @@ public final class TraceGeometryAnalyzer {
         toOverview(byName.get("生命线"), "生命线"));
   }
 
-  private static PalmLineSummary toOverview(LineTraceFeature feature, String defaultName) {
+  private PalmLineSummary toOverview(LineTraceFeature feature, String defaultName) {
     if (feature == null || !feature.available()) {
       return new PalmLineSummary(defaultName, "未确认", "你未手动描摹该线，当前结果基于通用模型推断，仅供参考。");
     }
@@ -87,12 +93,12 @@ public final class TraceGeometryAnalyzer {
     return new PalmLineSummary(feature.lineName(), tags, text);
   }
 
-  private static LineTraceFeature extractLineFeature(String lineName, List<TracePoint> points) {
+  private LineTraceFeature extractLineFeature(String lineName, List<TracePoint> points) {
     if (points == null || points.size() < 3) {
       return LineTraceFeature.unavailable(lineName);
     }
 
-    List<TracePoint> sampled = samplePoints(points, 3.0);
+    List<TracePoint> sampled = samplePoints(points, rules.traceSampleMinDistance());
     if (sampled.size() < 3) {
       return LineTraceFeature.unavailable(lineName);
     }
@@ -110,7 +116,7 @@ public final class TraceGeometryAnalyzer {
     String curvatureLabel = classifyCurvature(curvatureRatio);
 
     int jumpCount = countJumps(sampled);
-    String continuity = jumpCount >= 2 ? "断续" : "连续";
+    String continuity = jumpCount >= rules.traceJumpBreakThreshold() ? "断续" : "连续";
     boolean forked = detectFork(sampled, baseDiagonal);
     String eventLabel = detectEvents(sampled, baseDiagonal);
     String natural = buildNaturalSentence(lineName, lengthLabel, curvatureLabel, continuity, forked, eventLabel);
@@ -118,7 +124,7 @@ public final class TraceGeometryAnalyzer {
     return new LineTraceFeature(lineName, true, lengthLabel, curvatureLabel, continuity, forked, eventLabel, natural);
   }
 
-  private static List<TracePoint> samplePoints(List<TracePoint> points, double minDistance) {
+  private List<TracePoint> samplePoints(List<TracePoint> points, double minDistance) {
     List<TracePoint> sampled = new ArrayList<>();
     TracePoint last = null;
     for (TracePoint p : points) {
@@ -133,7 +139,7 @@ public final class TraceGeometryAnalyzer {
     return sampled;
   }
 
-  private static double pathLength(List<TracePoint> points) {
+  private double pathLength(List<TracePoint> points) {
     double sum = 0.0;
     for (int i = 1; i < points.size(); i++) {
       sum += distance(points.get(i - 1), points.get(i));
@@ -141,7 +147,7 @@ public final class TraceGeometryAnalyzer {
     return sum;
   }
 
-  private static double estimateDiagonal(List<TracePoint> points) {
+  private double estimateDiagonal(List<TracePoint> points) {
     double minX = Double.MAX_VALUE;
     double minY = Double.MAX_VALUE;
     double maxX = -Double.MAX_VALUE;
@@ -155,27 +161,27 @@ public final class TraceGeometryAnalyzer {
     return Math.hypot(maxX - minX, maxY - minY);
   }
 
-  private static String classifyLength(double ratio) {
-    if (ratio >= 1.15) {
+  private String classifyLength(double ratio) {
+    if (ratio >= rules.traceLongRatio()) {
       return "长";
     }
-    if (ratio >= 0.75) {
+    if (ratio >= rules.traceMediumRatio()) {
       return "中等";
     }
     return "短";
   }
 
-  private static String classifyCurvature(double ratio) {
-    if (ratio >= 1.35) {
+  private String classifyCurvature(double ratio) {
+    if (ratio >= rules.traceCurvatureLargeRatio()) {
       return "大";
     }
-    if (ratio >= 1.15) {
+    if (ratio >= rules.traceCurvatureMediumRatio()) {
       return "中";
     }
     return "小";
   }
 
-  private static int countJumps(List<TracePoint> points) {
+  private int countJumps(List<TracePoint> points) {
     if (points.size() < 3) {
       return 0;
     }
@@ -187,19 +193,19 @@ public final class TraceGeometryAnalyzer {
     int jumps = 0;
     for (int i = 1; i < points.size(); i++) {
       double segment = distance(points.get(i - 1), points.get(i));
-      if (segment > Math.max(18.0, avg * 3.2)) {
+      if (segment > Math.max(rules.traceJumpMinSegmentPx(), avg * rules.traceJumpAvgMultiplier())) {
         jumps++;
       }
     }
     return jumps;
   }
 
-  private static boolean detectFork(List<TracePoint> points, double baseDiagonal) {
+  private boolean detectFork(List<TracePoint> points, double baseDiagonal) {
     int n = points.size();
-    if (n < 8) {
+    if (n < rules.traceForkMinPoints()) {
       return false;
     }
-    int from = Math.max(0, (int) Math.floor(n * 0.8));
+    int from = Math.max(0, (int) Math.floor(n * rules.traceForkTailRatio()));
     List<TracePoint> tail = points.subList(from, n);
     TracePoint end = points.get(n - 1);
     double maxSpread = 0.0;
@@ -216,20 +222,20 @@ public final class TraceGeometryAnalyzer {
         continue;
       }
       double angle = Math.toDegrees(Math.atan2(dy, dx));
-      int bucket = (int) Math.round(angle / 25.0);
+      int bucket = (int) Math.round(angle / rules.traceForkAngleBucketDegrees());
       angleBuckets.add(bucket);
     }
-    return maxSpread > baseDiagonal * 0.12 && angleBuckets.size() >= 2;
+    return maxSpread > baseDiagonal * rules.traceForkSpreadRatio() && angleBuckets.size() >= rules.traceForkMinBuckets();
   }
 
-  private static String detectEvents(List<TracePoint> points, double baseDiagonal) {
+  private String detectEvents(List<TracePoint> points, double baseDiagonal) {
     boolean hasPause = false;
     for (int i = 1; i < points.size(); i++) {
       TracePoint prev = points.get(i - 1);
       TracePoint cur = points.get(i);
       if (prev.t() != null && cur.t() != null) {
         long dt = Math.abs(cur.t() - prev.t());
-        if (dt >= 260 && distance(prev, cur) < 2.0) {
+        if (dt >= rules.tracePauseMs() && distance(prev, cur) < rules.tracePauseMaxDistance()) {
           hasPause = true;
           break;
         }
@@ -238,13 +244,13 @@ public final class TraceGeometryAnalyzer {
 
     boolean hasLoop = false;
     for (int i = 0; i < points.size(); i++) {
-      for (int j = i + 4; j < points.size(); j++) {
-        if (distance(points.get(i), points.get(j)) < 6.0) {
+      for (int j = i + rules.traceLoopMinPointsGap(); j < points.size(); j++) {
+        if (distance(points.get(i), points.get(j)) < rules.traceLoopMaxDistance()) {
           double path = 0.0;
           for (int k = i + 1; k <= j; k++) {
             path += distance(points.get(k - 1), points.get(k));
           }
-          if (path > baseDiagonal * 0.18) {
+          if (path > baseDiagonal * rules.traceLoopPathRatio()) {
             hasLoop = true;
             break;
           }
@@ -264,7 +270,7 @@ public final class TraceGeometryAnalyzer {
     return "无";
   }
 
-  private static String buildNaturalSentence(
+  private String buildNaturalSentence(
       String lineName,
       String lengthLabel,
       String curvatureLabel,
@@ -289,7 +295,7 @@ public final class TraceGeometryAnalyzer {
     return sb.toString();
   }
 
-  private static double distance(TracePoint a, TracePoint b) {
+  private double distance(TracePoint a, TracePoint b) {
     return Math.hypot(a.x() - b.x(), a.y() - b.y());
   }
 

@@ -81,8 +81,11 @@ class PalmControllerTest {
       PalmSessionService palmSessionService = new PalmSessionService(sessionRepo);
       PalmNarrativeWriter narrativeWriter = new PalmNarrativeWriter(llmClient, new LoreService(), new ObjectMapper());
       MetricsService metricsService = new MetricsService(eventRepo, sessionRepo, palmRepo);
+      com.palmistrylab.api.palm.PalmRules rules = new com.palmistrylab.api.palm.PalmRules();
       return new PalmAnalysisService(sessionRepo, palmSessionService, narrativeWriter, llmClient,
-          perceptionClient, metricsService);
+          perceptionClient, metricsService,
+          new com.palmistrylab.api.palm.TraceGeometryAnalyzer(rules),
+          new com.palmistrylab.api.palm.LocalPalmImageValidator(rules));
     }
 
     @Bean(name = "analyzeExecutor")

@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TraceGeometryAnalyzerTest {
 
+  private final TraceGeometryAnalyzer analyzer = new TraceGeometryAnalyzer(new PalmRules());
+
   private TracePoint pt(double x, double y) {
     return new TracePoint(x, y, null);
   }
@@ -22,7 +24,7 @@ class TraceGeometryAnalyzerTest {
       points.add(pt(i * 10, i)); // 近似直线：长度≈对角线 → 弯曲度“小”
     }
 
-    TraceGeometryAnalyzer.TracePromptBundle bundle = TraceGeometryAnalyzer.buildTracePromptBundle(
+    TraceGeometryAnalyzer.TracePromptBundle bundle = analyzer.buildTracePromptBundle(
         new PalmLineTraces(points, null, null));
 
     assertThat(bundle.confirmed()).isTrue();
@@ -47,7 +49,7 @@ class TraceGeometryAnalyzerTest {
       points.add(pt(i * 10 + 2, 1)); // 折返，构成闭环
     }
 
-    TraceGeometryAnalyzer.TracePromptBundle bundle = TraceGeometryAnalyzer.buildTracePromptBundle(
+    TraceGeometryAnalyzer.TracePromptBundle bundle = analyzer.buildTracePromptBundle(
         new PalmLineTraces(points, null, null));
 
     assertThat(bundle.features().get(0).eventLabel()).isEqualTo("岛纹");
@@ -55,7 +57,7 @@ class TraceGeometryAnalyzerTest {
 
   @Test
   void tooFewPointsMarksFeatureUnavailable() {
-    TraceGeometryAnalyzer.TracePromptBundle bundle = TraceGeometryAnalyzer.buildTracePromptBundle(
+    TraceGeometryAnalyzer.TracePromptBundle bundle = analyzer.buildTracePromptBundle(
         new PalmLineTraces(List.of(pt(0, 0), pt(1, 1)), null, null));
 
     assertThat(bundle.confirmed()).isFalse();
@@ -64,10 +66,28 @@ class TraceGeometryAnalyzerTest {
 
   @Test
   void nullTracesProduceUnconfirmedBundle() {
-    TraceGeometryAnalyzer.TracePromptBundle bundle = TraceGeometryAnalyzer.buildTracePromptBundle(null);
+    TraceGeometryAnalyzer.TracePromptBundle bundle = analyzer.buildTracePromptBundle(null);
 
     assertThat(bundle.confirmed()).isFalse();
     assertThat(bundle.summaryText()).isEqualTo("未进行掌纹手动确认。");
+  }
+
+  @Test
+  void thresholdsComeFromRulesFile() {
+    // 把“长”的阈值调低到 0.5：同一条直线从“中等”变“长”，证明阈值外置生效
+    java.util.Map<String, Object> trace = java.util.Map.of(
+        "length", java.util.Map.of("long-ratio", 0.5, "medium-ratio", 0.3));
+    java.util.Map<String, Object> root = java.util.Map.of("trace", trace);
+    TraceGeometryAnalyzer tuned = new TraceGeometryAnalyzer(new PalmRules(root));
+
+    List<TracePoint> points = new java.util.ArrayList<>();
+    for (int i = 0; i <= 10; i++) {
+      points.add(pt(i * 10, i));
+    }
+    TraceGeometryAnalyzer.TracePromptBundle bundle = tuned.buildTracePromptBundle(
+        new PalmLineTraces(points, null, null));
+
+    assertThat(bundle.features().get(0).lengthLabel()).isEqualTo("长");
   }
 
   @Test
@@ -77,9 +97,9 @@ class TraceGeometryAnalyzerTest {
       points.add(pt(i * 10, i));
     }
     TraceGeometryAnalyzer.LineTraceFeature life =
-        TraceGeometryAnalyzer.buildTracePromptBundle(new PalmLineTraces(points, null, null)).features().get(0);
+        analyzer.buildTracePromptBundle(new PalmLineTraces(points, null, null)).features().get(0);
 
-    List<PalmLineSummary> overview = TraceGeometryAnalyzer.buildOverviewFromFeatures(List.of(life));
+    List<PalmLineSummary> overview = analyzer.buildOverviewFromFeatures(List.of(life));
 
     assertThat(overview).hasSize(3);
     assertThat(overview.get(0).lineName()).isEqualTo("感情线");

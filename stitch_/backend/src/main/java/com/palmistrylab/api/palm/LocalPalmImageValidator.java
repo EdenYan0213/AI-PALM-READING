@@ -1,5 +1,7 @@
 package com.palmistrylab.api.palm;
 
+import org.springframework.stereotype.Component;
+
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -9,20 +11,25 @@ import java.util.Base64;
 
 /**
  * 无感知边车/无 LLM 时的本地手掌校验启发式（TD §13.1 兜底层）：
- * 64x64 缩略图上做肤色像素占比 + 最大连通域 + 中心聚集判定。纯函数、无状态。
+ * 缩略图上做肤色像素占比 + 最大连通域 + 中心聚集判定。
+ * 阈值来自 palmistry-rules.yml（PalmRules），纯图像计算、无 IO。
  */
-public final class LocalPalmImageValidator {
+@Component
+public class LocalPalmImageValidator {
 
-  private LocalPalmImageValidator() {
+  private final PalmRules rules;
+
+  public LocalPalmImageValidator(PalmRules rules) {
+    this.rules = rules;
   }
 
-  public static boolean looksLikePalm(String imageData) {
+  public boolean looksLikePalm(String imageData) {
     BufferedImage sourceImage = decodeImage(imageData);
     if (sourceImage == null) {
       return false;
     }
 
-    int size = 64;
+    int size = rules.imageSize();
     BufferedImage scaled = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
     Graphics2D graphics = scaled.createGraphics();
     try {
@@ -49,7 +56,7 @@ public final class LocalPalmImageValidator {
       }
     }
 
-    if (skinCount < Math.round(totalCells * 0.12)) {
+    if (skinCount < Math.round(totalCells * rules.imageMinSkinRatio())) {
       return false;
     }
 
@@ -62,6 +69,7 @@ public final class LocalPalmImageValidator {
     int largeComponents = 0;
     int[] queue = new int[totalCells];
     int[][] neighbors = new int[][]{{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    int largeComponentThreshold = (int) Math.round(totalCells * rules.imageLargeComponentRatio());
 
     for (int index = 0; index < totalCells; index++) {
       if (mask[index] == 0 || visited[index]) {
@@ -109,7 +117,7 @@ public final class LocalPalmImageValidator {
         dominantMaxX = maxX;
         dominantMaxY = maxY;
       }
-      if (componentSize >= Math.round(totalCells * 0.04)) {
+      if (componentSize >= largeComponentThreshold) {
         largeComponents += 1;
       }
     }
@@ -125,8 +133,8 @@ public final class LocalPalmImageValidator {
     double centerX = (dominantMinX + dominantMaxX) / 2.0 / size;
     double centerY = (dominantMinY + dominantMaxY) / 2.0 / size;
 
-    int centerStart = (int) Math.floor(size * 0.25);
-    int centerEnd = (int) Math.floor(size * 0.75);
+    int centerStart = (int) Math.floor(size * rules.imageCenterStartRatio());
+    int centerEnd = (int) Math.floor(size * rules.imageCenterEndRatio());
     int centerSkin = 0;
     for (int y = centerStart; y < centerEnd; y++) {
       for (int x = centerStart; x < centerEnd; x++) {
@@ -136,14 +144,15 @@ public final class LocalPalmImageValidator {
       }
     }
 
-    int centerThreshold = (int) Math.round((centerEnd - centerStart) * (centerEnd - centerStart) * 0.16);
-    boolean centerAligned = centerX >= 0.22 && centerX <= 0.78 && centerY >= 0.22 && centerY <= 0.80;
-    return dominantRatio >= 0.18
-        && dominantRatio <= 0.82
-        && dominantBoxRatio >= 0.24
+    int centerThreshold = (int) Math.round((centerEnd - centerStart) * (centerEnd - centerStart) * rules.imageCenterMinSkinRatio());
+    boolean centerAligned = centerX >= rules.imageCenterMinX() && centerX <= rules.imageCenterMaxX()
+        && centerY >= rules.imageCenterMinY() && centerY <= rules.imageCenterMaxY();
+    return dominantRatio >= rules.imageDominantMinRatio()
+        && dominantRatio <= rules.imageDominantMaxRatio()
+        && dominantBoxRatio >= rules.imageDominantMinBoxRatio()
         && centerAligned
         && centerSkin >= centerThreshold
-        && largeComponents <= 2;
+        && largeComponents <= rules.imageMaxLargeComponents();
   }
 
   public static BufferedImage decodeImage(String imageData) {

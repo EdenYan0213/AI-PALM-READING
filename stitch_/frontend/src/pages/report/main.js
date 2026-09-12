@@ -16,6 +16,7 @@ const wechatText = document.getElementById('wechatText');
 const quotaText = document.getElementById('quotaText');
 const llmBadge = document.getElementById('llmBadge');
 const traceStatusText = document.getElementById('traceStatusText');
+const linesSummary = document.getElementById('linesSummary');
 const unlockHintText = document.getElementById('unlockHintText');
 const unlockButton = document.getElementById('unlockDeepReportButton');
 const adUnlockStatus = document.getElementById('adUnlockStatus');
@@ -79,6 +80,22 @@ const renderDeepSections = (sections) => {
   });
 };
 
+// PalmFeatureSet v1.1：展示描摹主线的确定性几何特征
+const renderLinesSummary = (fs) => {
+  const lines = fs && Array.isArray(fs.lines) ? fs.lines : [];
+  if (lines.length === 0) {
+    return;
+  }
+  linesSummary.innerHTML = '';
+  lines.forEach((line) => {
+    const chip = document.createElement('span');
+    chip.className = 'text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100';
+    chip.textContent = line.lineName + ' · ' + line.length + ' / ' + line.curvature + ' / ' + line.continuity;
+    linesSummary.appendChild(chip);
+  });
+  linesSummary.classList.remove('hidden');
+};
+
 const loadReport = () => {
   const capturedImage = store.getCapturedImage();
   if (capturedImage) {
@@ -125,6 +142,8 @@ const loadReport = () => {
     overview = payload.freeOverview;
   }
   showPreview();
+
+  renderLinesSummary(fs);
 
   if (payload.traceConfirmed === true) {
     const summary = payload.traceFeatureSummary || '已进行掌纹共同确认，报告依据你的描绘轨迹生成。';
