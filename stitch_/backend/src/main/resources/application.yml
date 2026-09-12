@@ -40,6 +40,9 @@ app:
   # 周记录照片落盘目录：photo_url 列只存相对路径，不再把 base64 大字段写进 MySQL
   photos:
     dir: ${PHOTOS_DIR:./data/photos}
+  # 运营看板访问令牌（留空则 /metrics/summary 不鉴权）
+  admin:
+    token: ${ADMIN_TOKEN:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:8080,http://127.0.0.1:8080}
   # 感知边车（V0.2）：留空关闭，主流程降级为 imageHash 确定性兜底
